@@ -10,12 +10,9 @@ const WS = 'wss://fstream.binance.com/ws';
 // Google Cloud Console에서 OAuth 클라이언트 ID 발급 후 교체
 const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
 
-const SYMBOLS = [
-  'BTCUSDT','ETHUSDT','SOLUSDT','XRPUSDT','BNBUSDT','DOGEUSDT',
-  'ADAUSDT','AVAXUSDT','LINKUSDT','SUIUSDT','TRXUSDT','DOTUSDT',
-  'LTCUSDT','BCHUSDT','APTUSDT','ARBUSDT','OPUSDT','PEPEUSDT',
-  'NEARUSDT','WLDUSDT'
-];
+// 바이낸스 선물 전체 USDT 페어 — 시작 시 동적 로드 (거래대금 내림차순)
+let SYMBOLS = [];
+const LIST_TOP = 50; // 검색어 없을 때 홈에 보여줄 상위 개수
 
 const state = {
   user: null,
@@ -31,9 +28,8 @@ const state = {
   overlays: [],         // main-chart indicator series
   subSeries: [],        // sub-chart indicator series
   fibLines: [],         // fibonacci price lines
+  srLines: [],          // 지지/저항 price lines
   candles: [],          // raw kline data
-  split: [],            // {chart, series, sym, ws} x4
-  splitTf: '15m',
   infoAt: 0,
 };
 
@@ -97,12 +93,15 @@ function enterApp() {
   loadFng();
 }
 
-/* ===================== 홈: 시세 ===================== */
+/* ===================== 홈: 시세 (선물 전체) ===================== */
 async function loadTickers() {
   try {
     const rows = await (await fetch(REST + '/ticker/24hr')).json();
-    for (const r of rows) {
-      if (!SYMBOLS.includes(r.symbol)) continue;
+    const usdt = rows
+      .filter(r => r.symbol.endsWith('USDT'))
+      .sort((a, b) => +b.quoteVolume - +a.quoteVolume);
+    SYMBOLS = usdt.map(r => r.symbol);
+    for (const r of usdt) {
       state.tickers[r.symbol] = { price: +r.lastPrice, chg: +r.priceChangePercent };
     }
     renderList();
@@ -114,42 +113,44 @@ async function loadTickers() {
 
 function connectTickerWs() {
   if (state.ws) state.ws.close();
-  const streams = SYMBOLS.map(s => s.toLowerCase() + '@miniTicker').join('/');
-  const ws = new WebSocket('wss://fstream.binance.com/stream?streams=' + streams);
+  // 전체 마켓 미니티커 단일 스트림 — 심볼 수백 개도 구독 하나로 처리
+  const ws = new WebSocket('wss://fstream.binance.com/ws/!miniTicker@arr');
   state.ws = ws;
   ws.onopen = () => $('conn-dot').classList.add('live');
   ws.onclose = () => { $('conn-dot').classList.remove('live'); setTimeout(connectTickerWs, 3000); };
   let pending = false;
   ws.onmessage = (ev) => {
-    const d = JSON.parse(ev.data).data;
-    if (!d) return;
-    const open = +d.o, close = +d.c;
-    state.tickers[d.s] = { price: close, chg: open ? (close - open) / open * 100 : 0 };
+    const arr = JSON.parse(ev.data);
+    if (!Array.isArray(arr)) return;
+    for (const d of arr) {
+      if (!d.s.endsWith('USDT')) continue;
+      const open = +d.o, close = +d.c;
+      state.tickers[d.s] = { price: close, chg: open ? (close - open) / open * 100 : 0 };
+    }
     if (!pending) {
       pending = true;
-      setTimeout(() => { pending = false; renderList(); renderFavs(); }, 800);
+      setTimeout(() => { pending = false; renderList(); renderFavs(); }, 1000);
     }
   };
 }
 
 function renderList() {
-  const q = ($('coin-search').value || '').toUpperCase();
-  const rows = SYMBOLS
-    .filter(s => !q || s.includes(q))
-    .map(s => {
-      const t = state.tickers[s];
-      if (!t) return '';
-      const base = s.replace('USDT', '');
-      const cls = t.chg >= 0 ? 'up' : 'dn';
-      return `<button class="coin-row" data-sym="${s}">
-        <div class="coin-ico">${base.slice(0, 3)}</div>
-        <div class="coin-meta"><b>${base}</b><span>${s}</span></div>
-        <div class="coin-nums">
-          <span class="p">$${fmtP(t.price)}</span>
-          <span class="c ${cls}">${fmtC(t.chg)}</span>
-        </div>
-      </button>`;
-    }).join('');
+  const q = ($('coin-search').value || '').toUpperCase().trim();
+  const pool = q ? SYMBOLS.filter(s => s.includes(q)) : SYMBOLS.slice(0, LIST_TOP);
+  const rows = pool.map(s => {
+    const t = state.tickers[s];
+    if (!t) return '';
+    const base = s.replace('USDT', '');
+    const cls = t.chg >= 0 ? 'up' : 'dn';
+    return `<button class="coin-row" data-sym="${s}">
+      <div class="coin-ico">${base.slice(0, 3)}</div>
+      <div class="coin-meta"><b>${base}</b><span>${s} · 선물</span></div>
+      <div class="coin-nums">
+        <span class="p">$${fmtP(t.price)}</span>
+        <span class="c ${cls}">${fmtC(t.chg)}</span>
+      </div>
+    </button>`;
+  }).join('');
   $('coin-list').innerHTML = rows || '<div class="list-loading">검색 결과 없음</div>';
 }
 
@@ -215,6 +216,7 @@ async function openChart(sym) {
   show('chart');
   await loadKlines();
   connectKlineWs();
+  drawSR();
 }
 
 async function loadKlines() {
@@ -502,81 +504,30 @@ function redrawAll() {
   resizeCharts();
 }
 
-/* ===================== 분할 차트 ===================== */
-const SPLIT_N = 4;
-
-function initSplit() {
-  if (state.split.length) return;
-  const grid = $('split-grid');
-  const defaults = [...new Set([...state.favs, 'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT'])].slice(0, SPLIT_N);
-  for (let i = 0; i < SPLIT_N; i++) {
-    const panel = document.createElement('div');
-    panel.className = 'split-panel';
-    panel.innerHTML = `
-      <div class="split-head">
-        <select data-i="${i}">${SYMBOLS.map(s =>
-          `<option value="${s}" ${s === defaults[i] ? 'selected' : ''}>${s.replace('USDT', '')}</option>`).join('')}
-        </select>
-        <span class="sp-chg" id="sp-chg-${i}">—</span>
-      </div>
-      <div class="split-body" id="sp-body-${i}"></div>`;
-    grid.appendChild(panel);
-
-    const chart = LightweightCharts.createChart($('sp-body-' + i), {
-      ...CHART_OPTS,
-      timeScale: { ...CHART_OPTS.timeScale, visible: false },
-      rightPriceScale: { ...CHART_OPTS.rightPriceScale, borderVisible: false },
-      handleScroll: false, handleScale: false,
-    });
-    const series = chart.addCandlestickSeries({
-      upColor: '#22C55E', downColor: '#EF4444',
-      wickUpColor: '#22C55E', wickDownColor: '#EF4444', borderVisible: false,
-    });
-    state.split.push({ chart, series, sym: defaults[i], ws: null });
-    loadSplitPanel(i);
-  }
-
-  grid.addEventListener('change', (e) => {
-    const sel = e.target.closest('select[data-i]');
-    if (!sel) return;
-    const i = +sel.dataset.i;
-    state.split[i].sym = sel.value;
-    loadSplitPanel(i);
-  });
-
-  $('split-tf').addEventListener('change', (e) => {
-    state.splitTf = e.target.value;
-    for (let i = 0; i < SPLIT_N; i++) loadSplitPanel(i);
-  });
-
-  new ResizeObserver(() => state.split.forEach((p, i) => {
-    const el = $('sp-body-' + i);
-    if (el.clientWidth) p.chart.resize(el.clientWidth, el.clientHeight);
-  })).observe(grid);
-}
-
-async function loadSplitPanel(i) {
-  const p = state.split[i];
-  if (p.ws) { p.ws.close(); p.ws = null; }
+/* ===================== 지지/저항 (피봇 포인트) ===================== */
+// 전일 일봉 기준 클래식 피봇: R1~R3 저항, S1~S3 지지 — 심볼 전환 시마다 자동 재계산
+async function drawSR() {
+  state.srLines.forEach(l => state.candleSeries.removePriceLine(l));
+  state.srLines = [];
+  const sym = state.sym;
   try {
-    const r = await fetch(`${REST}/klines?symbol=${p.sym}&interval=${state.splitTf}&limit=120`);
-    const rows = await r.json();
-    const data = rows.map(k => ({ time: k[0] / 1000, open: +k[1], high: +k[2], low: +k[3], close: +k[4] }));
-    p.series.setData(data);
-    p.chart.timeScale().fitContent();
-    if (data.length > 1) {
-      const chg = (data[data.length - 1].close - data[0].close) / data[0].close * 100;
-      const el = $('sp-chg-' + i);
-      el.textContent = fmtC(chg);
-      el.className = 'sp-chg ' + (chg >= 0 ? 'up' : 'dn');
+    const rows = await (await fetch(`${REST}/klines?symbol=${sym}&interval=1d&limit=2`)).json();
+    if (sym !== state.sym || !Array.isArray(rows) || rows.length < 2) return;
+    const [, h, l, , c] = [0, +rows[0][2], +rows[0][3], 0, +rows[0][4]]; // 전일 고/저/종
+    const p = (h + l + c) / 3;
+    const levels = [
+      ['저항3', h + 2 * (p - l)], ['저항2', p + (h - l)], ['저항1', 2 * p - l],
+      ['지지1', 2 * p - h], ['지지2', p - (h - l)], ['지지3', l - 2 * (h - p)],
+    ];
+    for (const [title, price] of levels) {
+      const isR = title.startsWith('저항');
+      state.srLines.push(state.candleSeries.createPriceLine({
+        price,
+        color: isR ? 'rgba(239,68,68,0.75)' : 'rgba(34,197,94,0.75)',
+        lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title,
+      }));
     }
-    const ws = new WebSocket(`${WS}/${p.sym.toLowerCase()}@kline_${state.splitTf}`);
-    p.ws = ws;
-    ws.onmessage = (ev) => {
-      const k = JSON.parse(ev.data).k;
-      if (k) p.series.update({ time: k.t / 1000, open: +k.o, high: +k.h, low: +k.l, close: +k.c });
-    };
-  } catch (e) { /* 개별 패널 실패는 무시 */ }
+  } catch (e) { /* 실패 시 라인 없이 진행 */ }
 }
 
 /* ===================== 정보 탭 ===================== */
@@ -712,7 +663,6 @@ function bindEvents() {
     if (!b) return;
     const tab = b.dataset.tab;
     if (tab === 'chart') openChart(state.sym);
-    else if (tab === 'split') { show('split'); initSplit(); }
     else if (tab === 'info') { show('info'); loadInfo(); }
     else show(tab);
   });

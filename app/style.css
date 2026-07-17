@@ -165,34 +165,6 @@ button{ font:inherit; color:inherit; background:none; border:none; cursor:pointe
 .chart-sub{ height:120px; margin:0 8px 8px; }
 .chart-sub.hidden{ display:none; }
 
-/* ===== 분할 차트 ===== */
-.split-tf-sel{
-  background:var(--surface); color:var(--ink); border:1px solid var(--line);
-  border-radius:10px; padding:6px 10px; font-size:13px; font-weight:600;
-}
-.split-grid{
-  flex:1; min-height:0; display:grid; gap:8px; padding:4px 10px 10px;
-  grid-template-columns:1fr; grid-auto-rows:1fr;
-}
-@media (min-width:560px){ .split-grid{ grid-template-columns:1fr 1fr; } }
-.split-panel{
-  display:flex; flex-direction:column; min-height:0;
-  background:var(--surface); border:1px solid var(--line); border-radius:14px;
-  overflow:hidden;
-}
-.split-head{
-  display:flex; align-items:center; justify-content:space-between;
-  padding:7px 10px 3px;
-}
-.split-head select{
-  background:transparent; color:var(--ink); border:none; font-size:13px; font-weight:700;
-  outline:none;
-}
-.split-head select option{ background:var(--surface-2); }
-.split-head .sp-chg{ font-size:12px; font-weight:700; font-variant-numeric:tabular-nums; }
-.split-head .sp-chg.up{ color:var(--up); } .split-head .sp-chg.dn{ color:var(--dn); }
-.split-body{ flex:1; min-height:0; }
-
 /* ===== 정보 탭 ===== */
 .info-scroll{ flex:1; overflow-y:auto; padding:0 18px 20px; }
 .macro-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
