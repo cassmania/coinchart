@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "io.github.cassmania.coinchart",
+      "sha256_cert_fingerprints": [
+        "PWABuilder_또는_Play_Console_앱_서명_키의_SHA256_지문으로_교체"
+      ]
+    }
+  }
+]
