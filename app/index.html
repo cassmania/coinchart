@@ -63,7 +63,17 @@
     <button class="btn-fav" id="btn-fav" aria-label="즐겨찾기">★</button>
   </header>
 
+  <!-- 인포바: 선물 스냅샷 -->
+  <div class="infobar" id="infobar">
+    <span>펀딩 <b id="ib-fund">—</b></span>
+    <span>OI <b id="ib-oi">—</b></span>
+    <span>VWAP <b id="ib-vwap">—</b></span>
+    <span>MA배열 <b id="ib-maorder">—</b></span>
+    <span>ST <b id="ib-st">—</b></span>
+  </div>
+
   <div class="tf-row" id="tf-row">
+    <button class="sidebar-toggle" id="sidebar-toggle" aria-label="지표 패널">☰ 지표</button>
     <button data-tf="1m">1분</button>
     <button data-tf="5m">5분</button>
     <button data-tf="15m" class="on">15분</button>
@@ -73,21 +83,67 @@
     <button data-tf="1w">주봉</button>
   </div>
 
-  <div class="ind-row" id="ind-row">
-    <button data-ind="ma" class="on">MA</button>
-    <button data-ind="bb">볼린저</button>
-    <button data-ind="vwap">VWAP</button>
-    <button data-ind="fib">피보</button>
-    <button data-ind="st">슈퍼T</button>
-    <button data-ind="vpvr">VPVR</button>
-    <button data-ind="rsi" class="on">RSI</button>
-    <button data-ind="macd">MACD</button>
-  </div>
+  <div class="chart-wrap">
+    <!-- 좌측 사이드바: 지지저항 / 이동평균 / 오실레이터 / 선물 / 종합시그널 -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sb-sec">
+        <div class="sb-ttl">지지·저항선</div>
+        <div id="sr-panel" class="sr-panel"><div class="sb-hint">차트 로딩 중…</div></div>
+      </div>
 
-  <div id="chart-main" class="chart-box">
-    <canvas id="vpvr-canvas"></canvas>
+      <div class="sb-sec">
+        <div class="sb-ttl">이동평균선</div>
+        <div class="ma-panel" id="ma-panel"></div>
+      </div>
+
+      <div class="sb-sec">
+        <div class="sb-ttl">오실레이터</div>
+        <div class="osc-grid">
+          <div class="osc-card"><span>RSI(14)</span><b id="o-rsi">—</b></div>
+          <div class="osc-card"><span>CCI(20)</span><b id="o-cci">—</b></div>
+          <div class="osc-card"><span>MACD</span><b id="o-macd">—</b></div>
+          <div class="osc-card"><span>스토캐스틱</span><b id="o-stoch">—</b></div>
+        </div>
+      </div>
+
+      <div class="sb-sec">
+        <div class="sb-ttl">선물 데이터</div>
+        <div class="osc-grid">
+          <div class="osc-card"><span>펀딩비</span><b id="f-fund">—</b></div>
+          <div class="osc-card"><span>OI</span><b id="f-oi">—</b></div>
+          <div class="osc-card"><span>24H 고가</span><b id="f-high">—</b></div>
+          <div class="osc-card"><span>24H 저가</span><b id="f-low">—</b></div>
+        </div>
+      </div>
+
+      <div class="sb-sec">
+        <div class="sb-ttl">종합 시그널</div>
+        <div class="sig-panel" id="sig-panel"><span class="sig-chip">—</span></div>
+      </div>
+    </aside>
+
+    <div class="chart-col">
+      <div id="chart-main" class="chart-box">
+        <canvas id="vpvr-canvas"></canvas>
+        <div class="ind-row" id="ind-row">
+          <button data-ind="ma" class="on">MA</button>
+          <button data-ind="bb">볼린저</button>
+          <button data-ind="vwap">VWAP</button>
+          <button data-ind="fib">피보</button>
+          <button data-ind="st">슈퍼T</button>
+          <button data-ind="vpvr">VPVR</button>
+        </div>
+      </div>
+      <div class="sub-tabs" id="sub-tabs">
+        <button data-sub="macd" class="on">MACD</button>
+        <button data-sub="rsi">RSI</button>
+        <button data-sub="cci">CCI</button>
+        <button data-sub="stoch">스토캐스틱</button>
+      </div>
+      <div id="chart-sub" class="chart-sub"></div>
+    </div>
   </div>
-  <div id="chart-sub" class="chart-sub"></div>
+  <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 </section>
 
 <!-- ===== 화면 4: 정보 (매크로 + 캘린더) ===== -->

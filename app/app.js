@@ -20,7 +20,9 @@ const state = {
   favs: JSON.parse(localStorage.getItem('favs') || '["BTCUSDT","ETHUSDT","SOLUSDT"]'),
   sym: 'BTCUSDT',
   tf: '15m',
-  inds: new Set(['ma', 'rsi']),
+  inds: new Set(['ma']),                 // 메인차트 오버레이 토글
+  maOn: new Set(JSON.parse(localStorage.getItem('maOn') || '[20,60,120,200]')), // 개별 MA
+  subTab: 'macd',                        // 서브차트 지표
   ws: null,
   klineWs: null,
   chart: null, sub: null,
@@ -214,9 +216,10 @@ async function openChart(sym) {
   $('chart-sym').textContent = sym;
   updateFavBtn();
   show('chart');
-  await loadKlines();
+  await loadKlines();      // 내부에서 drawIndicators → renderMAPanel/오실레이터/시그널
   connectKlineWs();
   drawSR();
+  loadFutures();
 }
 
 async function loadKlines() {
@@ -329,6 +332,42 @@ function bollinger(data, n = 20, mult = 2) {
   return { up, mid, low };
 }
 
+function cci(data, n = 20) {
+  const out = [];
+  for (let i = n - 1; i < data.length; i++) {
+    let sumTp = 0;
+    const tps = [];
+    for (let j = i - n + 1; j <= i; j++) {
+      const tp = (data[j].high + data[j].low + data[j].close) / 3;
+      tps.push(tp); sumTp += tp;
+    }
+    const ma = sumTp / n;
+    let md = 0;
+    for (const tp of tps) md += Math.abs(tp - ma);
+    md /= n;
+    const tp = (data[i].high + data[i].low + data[i].close) / 3;
+    out.push({ time: data[i].time, value: md ? (tp - ma) / (0.015 * md) : 0 });
+  }
+  return out;
+}
+
+function stochastic(data, n = 14, k = 3, d = 3) {
+  const raw = [];
+  for (let i = n - 1; i < data.length; i++) {
+    let hh = -Infinity, ll = Infinity;
+    for (let j = i - n + 1; j <= i; j++) { hh = Math.max(hh, data[j].high); ll = Math.min(ll, data[j].low); }
+    raw.push({ time: data[i].time, value: hh === ll ? 50 : (data[i].close - ll) / (hh - ll) * 100 });
+  }
+  const smooth = (arr, p) => arr.map((_, i) => {
+    if (i < p - 1) return null;
+    let s = 0; for (let j = i - p + 1; j <= i; j++) s += arr[j].value;
+    return { time: arr[i].time, value: s / p };
+  }).filter(Boolean);
+  const kLine = smooth(raw, k);
+  const dLine = smooth(kLine, d);
+  return { k: kLine, d: dLine };
+}
+
 function atr(data, n = 10) {
   const out = [];
   let prev;
@@ -420,7 +459,7 @@ function vwap(data) {
 }
 
 /* ===================== 지표 렌더 ===================== */
-const MA_SET = [[20, '#FCAF45'], [60, '#F77737'], [120, '#E1306C'], [200, '#833AB4']];
+const MA_SET = [[20, '#FCAF45'], [60, '#378ADD'], [120, '#1D9E75'], [200, '#833AB4']];
 
 function drawIndicators(liveOnly) {
   if (liveOnly) return redrawAll(); // 캔들 수 적으니 전체 재계산이 단순·충분
@@ -439,7 +478,7 @@ function redrawAll() {
 
   if (state.inds.has('ma')) {
     for (const [n, color] of MA_SET) {
-      if (d.length < n) continue;
+      if (d.length < n || !state.maOn.has(n)) continue;
       const s = state.chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
       s.setData(sma(d, n));
       state.overlays.push(s);
@@ -475,20 +514,16 @@ function redrawAll() {
 
   drawFib();
   drawVpvr();
+  drawSubChart(d);
+  renderMAPanel();
+  renderOscillators(d);
+  renderSignals(d);
+  resizeCharts();
+}
 
-  // 서브차트: RSI 우선, 아니면 MACD
-  const sub = $('chart-sub');
-  if (state.inds.has('rsi')) {
-    sub.classList.remove('hidden');
-    const s = state.sub.addLineSeries({ color: '#E1306C', lineWidth: 1.5 });
-    s.setData(rsi(d));
-    state.subSeries.push(s);
-    for (const lvl of [30, 70]) {
-      s.createPriceLine({ price: lvl, color: 'rgba(160,141,154,0.4)', lineWidth: 1, lineStyle: 2, title: String(lvl) });
-    }
-    state.sub.timeScale().fitContent();
-  } else if (state.inds.has('macd')) {
-    sub.classList.remove('hidden');
+function drawSubChart(d) {
+  const tab = state.subTab;
+  if (tab === 'macd') {
     const md = macd(d);
     const hist = state.sub.addHistogramSeries({});
     hist.setData(md.map(x => ({ time: x.time, value: x.hist, color: x.hist >= 0 ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)' })));
@@ -497,37 +532,205 @@ function redrawAll() {
     const l2 = state.sub.addLineSeries({ color: '#833AB4', lineWidth: 1 });
     l2.setData(md.map(x => ({ time: x.time, value: x.signal })));
     state.subSeries.push(hist, l1, l2);
-    state.sub.timeScale().fitContent();
-  } else {
-    sub.classList.add('hidden');
+  } else if (tab === 'rsi') {
+    const s = state.sub.addLineSeries({ color: '#E1306C', lineWidth: 1.5 });
+    s.setData(rsi(d));
+    state.subSeries.push(s);
+    for (const lvl of [30, 70]) s.createPriceLine({ price: lvl, color: 'rgba(160,141,154,0.4)', lineWidth: 1, lineStyle: 2, title: String(lvl) });
+  } else if (tab === 'cci') {
+    const s = state.sub.addLineSeries({ color: '#22D3EE', lineWidth: 1.5 });
+    s.setData(cci(d));
+    state.subSeries.push(s);
+    for (const lvl of [-100, 100]) s.createPriceLine({ price: lvl, color: 'rgba(160,141,154,0.4)', lineWidth: 1, lineStyle: 2, title: String(lvl) });
+  } else if (tab === 'stoch') {
+    const st = stochastic(d);
+    const kL = state.sub.addLineSeries({ color: '#FCAF45', lineWidth: 1.5 });
+    kL.setData(st.k);
+    const dL = state.sub.addLineSeries({ color: '#833AB4', lineWidth: 1 });
+    dL.setData(st.d);
+    state.subSeries.push(kL, dL);
+    for (const lvl of [20, 80]) kL.createPriceLine({ price: lvl, color: 'rgba(160,141,154,0.4)', lineWidth: 1, lineStyle: 2, title: String(lvl) });
   }
-  resizeCharts();
+  state.sub.timeScale().fitContent();
 }
 
-/* ===================== 지지/저항 (피봇 포인트) ===================== */
-// 전일 일봉 기준 클래식 피봇: R1~R3 저항, S1~S3 지지 — 심볼 전환 시마다 자동 재계산
+/* ===================== 지지/저항 (복합) ===================== */
+// 데스크톱 대시보드와 동일한 복합 기준:
+//   저항: 1차=스윙고/R1피봇, 2차=MA20, 3차=MA60/BB상단, 매물대=VPVR POC
+//   지지: 1차=MA20/스윙저, 2차=연간저, 3차=S1피봇
+// 심볼 전환 시마다 전부 자동 재계산.
+function last(arr) { return arr.length ? arr[arr.length - 1].value : null; }
+
 async function drawSR() {
   state.srLines.forEach(l => state.candleSeries.removePriceLine(l));
   state.srLines = [];
   const sym = state.sym;
+  const d = state.candles;
+  if (!d.length) { renderSRPanel([]); return; }
+  const price = d[d.length - 1].close;
+
+  // 현재 차트 데이터 기반 값
+  const ma20 = last(sma(d, 20)), ma60 = last(sma(d, 60));
+  const bb = bollinger(d);
+  const bbUp = last(bb.up);
+  // 스윙 고저 (표시 구간)
+  let swH = -Infinity, swL = Infinity;
+  for (const c of d) { swH = Math.max(swH, c.high); swL = Math.min(swL, c.low); }
+  // VPVR POC
+  const poc = vpvrPoc(d);
+
+  let R1p = null, S1p = null, yLow = null;
   try {
-    const rows = await (await fetch(`${REST}/klines?symbol=${sym}&interval=1d&limit=2`)).json();
-    if (sym !== state.sym || !Array.isArray(rows) || rows.length < 2) return;
-    const [, h, l, , c] = [0, +rows[0][2], +rows[0][3], 0, +rows[0][4]]; // 전일 고/저/종
-    const p = (h + l + c) / 3;
-    const levels = [
-      ['저항3', h + 2 * (p - l)], ['저항2', p + (h - l)], ['저항1', 2 * p - l],
-      ['지지1', 2 * p - h], ['지지2', p - (h - l)], ['지지3', l - 2 * (h - p)],
-    ];
-    for (const [title, price] of levels) {
-      const isR = title.startsWith('저항');
-      state.srLines.push(state.candleSeries.createPriceLine({
-        price,
-        color: isR ? 'rgba(239,68,68,0.75)' : 'rgba(34,197,94,0.75)',
-        lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title,
-      }));
+    // 전일 일봉 → 피봇, 연간 일봉 → 연간 저점
+    const [dayRows, yrRows] = await Promise.all([
+      fetch(`${REST}/klines?symbol=${sym}&interval=1d&limit=2`).then(r => r.json()),
+      fetch(`${REST}/klines?symbol=${sym}&interval=1d&limit=365`).then(r => r.json()),
+    ]);
+    if (sym !== state.sym) return;
+    if (Array.isArray(dayRows) && dayRows.length >= 2) {
+      const h = +dayRows[0][2], l = +dayRows[0][3], c = +dayRows[0][4];
+      const p = (h + l + c) / 3;
+      R1p = 2 * p - l; S1p = 2 * p - h;
     }
-  } catch (e) { /* 실패 시 라인 없이 진행 */ }
+    if (Array.isArray(yrRows) && yrRows.length) {
+      yLow = Math.min(...yrRows.map(k => +k[3]));
+    }
+  } catch (e) { /* 피봇/연간 실패 시 나머지로 진행 */ }
+
+  // 라벨·값·태그 (null 항목은 제외)
+  const items = [
+    { cls: 'r', label: '1차 저항', tag: R1p ? 'R1 피벗' : '스윙고', val: R1p ?? swH },
+    { cls: 'r', label: '2차 저항', tag: 'MA20', val: ma20 },
+    { cls: 'r', label: '3차 저항', tag: bbUp != null ? 'BB 상단' : 'MA60', val: bbUp ?? ma60 },
+    { cls: 'poc', label: '매물대', tag: 'VPVR POC', val: poc },
+    { cls: 's', label: '1차 지지', tag: ma20 != null ? 'MA20' : '스윙저', val: ma20 != null ? Math.min(ma20, swL) : swL },
+    { cls: 's', label: '2차 지지', tag: yLow != null ? '연간 저점' : '스윙저', val: yLow ?? swL },
+    { cls: 's', label: '3차 지지', tag: S1p ? 'S1 피벗' : '스윙저', val: S1p ?? swL },
+  ].filter(x => x.val != null && isFinite(x.val));
+
+  // 가격축 라인
+  for (const it of items) {
+    const color = it.cls === 'r' ? 'rgba(239,68,68,0.72)'
+      : it.cls === 's' ? 'rgba(34,197,94,0.72)' : 'rgba(131,58,180,0.75)';
+    state.srLines.push(state.candleSeries.createPriceLine({
+      price: it.val, color, lineWidth: 1, lineStyle: it.cls === 'poc' ? 2 : 0,
+      axisLabelVisible: true, title: it.label,
+    }));
+  }
+  // 현재가 대비 거리 계산해 사이드바 렌더
+  renderSRPanel(items.map(it => ({ ...it, dist: (it.val - price) / price * 100 })));
+}
+
+function vpvrPoc(d) {
+  if (!d.length) return null;
+  let hi = -Infinity, lo = Infinity;
+  for (const c of d) { hi = Math.max(hi, c.high); lo = Math.min(lo, c.low); }
+  if (hi === lo) return null;
+  const BINS = 28, bins = new Array(BINS).fill(0);
+  for (const c of d) {
+    const tp = (c.high + c.low + c.close) / 3;
+    bins[Math.min(BINS - 1, Math.floor((tp - lo) / (hi - lo) * BINS))] += c.volume;
+  }
+  const poc = bins.indexOf(Math.max(...bins));
+  return lo + (poc + 0.5) / BINS * (hi - lo);
+}
+
+function renderSRPanel(items) {
+  if (!items.length) { $('sr-panel').innerHTML = '<div class="sb-hint">데이터 없음</div>'; return; }
+  $('sr-panel').innerHTML = items.map(it => {
+    const dc = it.dist >= 0 ? 'up' : 'dn';
+    const ds = (it.dist >= 0 ? '+' : '') + it.dist.toFixed(2) + '%';
+    return `<div class="sr-item ${it.cls}">
+      <span class="sr-label">${it.label} <span class="sr-tag">${it.tag}</span></span>
+      <span class="sr-val">${fmtP(it.val)}</span>
+      <span class="sr-dist ${dc}">${ds}</span>
+    </div>`;
+  }).join('');
+}
+
+/* ===================== 사이드바 패널 ===================== */
+function renderMAPanel() {
+  $('ma-panel').innerHTML = MA_SET.map(([n, color]) => {
+    const on = state.maOn.has(n);
+    const v = last(sma(state.candles, n));
+    return `<div class="ma-row" data-ma="${n}">
+      <span style="color:${color}">MA${n}</span>
+      <span style="display:flex;align-items:center;gap:8px">
+        <span class="ma-val">${v != null ? fmtP(v) : '—'}</span>
+        <span class="ma-sw ${on ? 'on' : ''}"></span>
+      </span>
+    </div>`;
+  }).join('');
+}
+
+function renderOscillators(d) {
+  const rV = last(rsi(d)), cV = last(cci(d));
+  const md = macd(d), mV = md.length ? md[md.length - 1].hist : null;
+  const st = stochastic(d), sV = st.k.length ? st.k[st.k.length - 1].value : null;
+  const set = (id, val, fmt, cls) => {
+    const el = $(id);
+    el.textContent = val == null ? '—' : fmt(val);
+    el.className = cls ? cls(val) : '';
+  };
+  set('o-rsi', rV, v => v.toFixed(1), v => v >= 70 ? 'dn' : v <= 30 ? 'up' : '');
+  set('o-cci', cV, v => v.toFixed(1), v => v >= 100 ? 'dn' : v <= -100 ? 'up' : '');
+  set('o-macd', mV, v => v.toFixed(2), v => v >= 0 ? 'up' : 'dn');
+  set('o-stoch', sV, v => v.toFixed(1), v => v >= 80 ? 'dn' : v <= 20 ? 'up' : '');
+}
+
+function renderSignals(d) {
+  const chips = [];
+  const rV = last(rsi(d));
+  const price = d[d.length - 1].close;
+  const ma200 = last(sma(d, 200));
+  const st = supertrend(d);
+  const stUp = st.length ? st[st.length - 1].up : null;
+
+  if (rV != null) {
+    if (rV >= 70) chips.push(['RSI 과매수', 'bear']);
+    else if (rV <= 30) chips.push(['RSI 과매도', 'bull']);
+  }
+  if (ma200 != null) chips.push([price >= ma200 ? 'MA200 위' : 'MA200 아래', price >= ma200 ? 'bull' : 'bear']);
+  if (stUp != null) chips.push(['ST ' + (stUp ? '매수' : '매도'), stUp ? 'bull' : 'bear']);
+
+  const bull = chips.filter(c => c[1] === 'bull').length;
+  const bear = chips.filter(c => c[1] === 'bear').length;
+  const verdict = bull > bear ? ['매수 우위', 'bull'] : bear > bull ? ['매도 우위', 'bear'] : ['중립', ''];
+  $('sig-panel').innerHTML = [verdict, ...chips]
+    .map(([t, c]) => `<span class="sig-chip ${c}">${t}</span>`).join('');
+
+  // 인포바 MA배열·ST
+  const ma20 = last(sma(d, 20)), ma60 = last(sma(d, 60));
+  const ibST = $('ib-st'), ibMA = $('ib-maorder'), ibVwap = $('ib-vwap');
+  if (stUp != null) { ibST.textContent = stUp ? '매수' : '매도'; ibST.className = stUp ? 'up' : 'dn'; }
+  if (ma20 != null && ma60 != null && ma200 != null) {
+    const up = ma20 > ma60 && ma60 > ma200;
+    const dn = ma20 < ma60 && ma60 < ma200;
+    ibMA.textContent = up ? '정배열' : dn ? '역배열' : '혼조';
+    ibMA.className = up ? 'up' : dn ? 'dn' : '';
+  }
+  const vw = last(vwap(d));
+  if (vw != null) ibVwap.textContent = fmtP(vw);
+}
+
+/* ===================== 선물 데이터 (차트 헤더) ===================== */
+async function loadFutures() {
+  const sym = state.sym;
+  try {
+    const [pi, oi, t24] = await Promise.all([
+      fetch(`${REST}/premiumIndex?symbol=${sym}`).then(r => r.json()),
+      fetch(`${REST}/openInterest?symbol=${sym}`).then(r => r.json()),
+      fetch(`${REST}/ticker/24hr?symbol=${sym}`).then(r => r.json()),
+    ]);
+    if (sym !== state.sym) return;
+    const f = +pi.lastFundingRate * 100;
+    const oiK = (+oi.openInterest / 1000).toFixed(1) + 'K';
+    $('f-fund').textContent = f.toFixed(4) + '%'; $('f-fund').className = f >= 0 ? 'up' : 'dn';
+    $('ib-fund').textContent = f.toFixed(4) + '%'; $('ib-fund').className = f >= 0 ? 'up' : 'dn';
+    $('f-oi').textContent = oiK; $('ib-oi').textContent = oiK;
+    $('f-high').textContent = fmtP(+t24.highPrice);
+    $('f-low').textContent = fmtP(+t24.lowPrice);
+  } catch (e) { /* 실패 무시 */ }
 }
 
 /* ===================== 정보 탭 ===================== */
@@ -645,18 +848,46 @@ function bindEvents() {
     connectKlineWs();
   });
 
+  // 메인차트 오버레이 토글 (MA·볼린저·VWAP·피보·슈퍼T·VPVR)
   $('ind-row').addEventListener('click', (e) => {
     const b = e.target.closest('[data-ind]');
     if (!b) return;
     const ind = b.dataset.ind;
-    // rsi/macd는 서브차트 하나를 공유 — 상호 배타
-    if (ind === 'rsi' && !state.inds.has('rsi')) state.inds.delete('macd');
-    if (ind === 'macd' && !state.inds.has('macd')) state.inds.delete('rsi');
     if (state.inds.has(ind)) state.inds.delete(ind); else state.inds.add(ind);
     document.querySelectorAll('#ind-row button').forEach(x =>
       x.classList.toggle('on', state.inds.has(x.dataset.ind)));
     redrawAll();
   });
+
+  // 서브차트 지표 탭 (MACD·RSI·CCI·스토캐스틱)
+  $('sub-tabs').addEventListener('click', (e) => {
+    const b = e.target.closest('[data-sub]');
+    if (!b) return;
+    state.subTab = b.dataset.sub;
+    document.querySelectorAll('#sub-tabs button').forEach(x => x.classList.toggle('on', x === b));
+    redrawAll();
+  });
+
+  // 이동평균 개별 토글
+  $('ma-panel').addEventListener('click', (e) => {
+    const row = e.target.closest('[data-ma]');
+    if (!row) return;
+    const n = +row.dataset.ma;
+    if (state.maOn.has(n)) state.maOn.delete(n); else state.maOn.add(n);
+    localStorage.setItem('maOn', JSON.stringify([...state.maOn]));
+    redrawAll();
+  });
+
+  // 사이드바 열기/닫기 (모바일)
+  const closeSidebar = () => {
+    $('sidebar').classList.remove('open');
+    $('sidebar-backdrop').classList.remove('open');
+  };
+  $('sidebar-toggle').onclick = () => {
+    $('sidebar').classList.toggle('open');
+    $('sidebar-backdrop').classList.toggle('open');
+  };
+  $('sidebar-backdrop').onclick = closeSidebar;
 
   $('tabbar').addEventListener('click', (e) => {
     const b = e.target.closest('[data-tab]');
@@ -669,8 +900,23 @@ function bindEvents() {
 }
 
 /* ===================== 시작 ===================== */
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+if ('serviceWorker' in navigator && !location.search.includes('nosw')) {
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    reg.update();
+    // 새 버전 감지 시 자동 적용 후 1회 리로드 (구버전 캐시 고착 방지)
+    reg.addEventListener('updatefound', () => {
+      const nw = reg.installing;
+      nw && nw.addEventListener('statechange', () => {
+        if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+          nw.postMessage('skipWaiting');
+        }
+      });
+    });
+  }).catch(() => {});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!reloaded) { reloaded = true; location.reload(); }
+  });
 }
 initCharts();
 bindEvents();

@@ -1,10 +1,14 @@
 /* 최소 서비스워커: 앱 셸 캐시, 시세 API는 항상 네트워크 */
-const CACHE = 'coinchart-v2';
+const CACHE = 'coinchart-v3';
 const SHELL = ['.', 'index.html', 'style.css', 'app.js', 'manifest.json'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)));
   self.skipWaiting();
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data === 'skipWaiting') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
