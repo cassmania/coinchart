@@ -5,7 +5,7 @@
    ============================================================ */
 'use strict';
 
-const REST = 'https://fapi.binance.com/fapi/v1';
+const REST = 'https://corsproxy.io/?https://fapi.binance.com/fapi/v1';
 const WS = 'wss://fstream.binance.com/ws';
 // Google Cloud Console에서 OAuth 클라이언트 ID 발급 후 교체
 const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID.apps.googleusercontent.com';
