@@ -334,6 +334,7 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
     <div class="irow"><span class="iname">슈퍼트렌드</span><span class="ival" id="vST">--</span><div class="tog on" id="tST" onclick="togInd('ST')"></div></div>
     <div class="irow"><span class="iname">피보나치</span><span class="ival" style="color:var(--y)">자동</span><div class="tog on" id="tFIB" onclick="togInd('FIB')"></div></div>
     <div class="irow"><span class="iname">VPVR</span><span class="ival" style="color:#f3ba2f">프로파일</span><div class="tog on" id="tVPVR" onclick="togInd('VPVR')"></div></div>
+    <div class="irow"><span class="iname">엘리엇 파동</span><span class="ival" style="color:#e1306c">자동 카운팅</span><div class="tog on" id="tWAVE" onclick="togInd('WAVE')"></div></div>
   </div>
   <div class="sb-sec">
     <div class="sb-ttl">오실레이터</div>
@@ -356,6 +357,10 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
   <div class="sb-sec">
     <div class="sb-ttl">종합 시그널</div>
     <div class="sig-row" id="sigRow"><span class="sig neutral">분석 중...</span></div>
+  </div>
+  <div class="sb-sec">
+    <div class="sb-ttl-row"><div class="sb-ttl" style="margin-bottom:0">📐 엘리엇 파동 분석</div><span class="sb-sel-sym" id="waveConf">--</span></div>
+    <div id="waveBox" style="font-size:11px;line-height:1.6;color:var(--tx2)">캔들 로딩 후 자동 카운팅</div>
   </div>
   <div class="sb-sec">
     <div class="sb-ttl-row"><div class="sb-ttl" style="margin-bottom:0">매크로 브리핑</div><span class="sb-sel-sym" id="macroUpdated" title="마지막 갱신 시각">--</span></div>
@@ -426,7 +431,7 @@ let activeExchange = 'MEXC', livePollTimer = null, splitCount = 8, splitCharts =
 let allCoins = [], filteredCoins = [], favTab = 'all', searchOpen = false;
 let favs = loadFavs();
 let frVal = 0;
-let inds = {MA20:1,MA60:1,MA120:1,MA200:1,BB:1,VWAP:1,ST:1,FIB:1,VPVR:1};
+let inds = {MA20:1,MA60:1,MA120:1,MA200:1,BB:1,VWAP:1,ST:1,FIB:1,VPVR:1,WAVE:1};
 let loadSeq = 0, wsReconnectTimer = null, wsManualClose = false, renderTimer = null;
 
 // 차트 인스턴스
@@ -436,6 +441,7 @@ let MACC, macdS, sigS, histS;
 let CCIC, cciS, cciOB, cciOS;
 let SC, skS, sdS, sOB, sOS;
 let srLines = [], fibLines = [];
+let waveLineS = null, waveFibLines = [];
 
 // ── API ──────────────────────────────────────────────────
 const BY  = 'https://api.bybit.com/v5';
@@ -624,6 +630,7 @@ function initCharts() {
   vwapS    = MC.addLineSeries({ color:'#ff8c42', lineWidth:1.5, priceLineVisible:false, lastValueVisible:true, title:'VWAP' });
   stUpS    = MC.addLineSeries({ color:'#0ecb81', lineWidth:2, priceLineVisible:false, lastValueVisible:false });
   stDnS    = MC.addLineSeries({ color:'#f6465d', lineWidth:2, priceLineVisible:false, lastValueVisible:false });
+  waveLineS= MC.addLineSeries({ color:'#e1306c', lineWidth:2, lineStyle:0, priceLineVisible:false, lastValueVisible:false, crosshairMarkerVisible:false });
 
   const sub = { ...base, timeScale:{ ...base.timeScale, visible:false } };
   const rEl = document.getElementById('rsiPane');
@@ -694,6 +701,7 @@ function renderAll() {
   safeRun('사이드바', doSidebar);
   safeRun('종합 신호', doSignal);
   safeRun('VPVR', drawVPVR);
+  safeRun('엘리엇 파동', doWave);
   if (selectedPanelIdx === 1) safeRun('현재가박스', refreshMainPriceBox);
 }
 
@@ -1024,6 +1032,182 @@ function drawVPVR(){
   const pocY=(1-(poc.price-l)/(h-l))*cv.height;
   ctx.strokeStyle='rgba(243,186,47,.85)';ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
   ctx.beginPath();ctx.moveTo(0,pocY);ctx.lineTo(cv.width,pocY);ctx.stroke();ctx.setLineDash([]);
+}
+
+// ══════════════════════════════════════════════════════════
+//  엘리엇 파동 + 피보나치 정밀 분석 (coin-wave-analysis 스킬 이식)
+//  절대법칙: ①2파는 1파 시작점 이탈 불가 ②3파는 최단 파동 불가 ③4파는 1파 고점 침범 불가
+// ══════════════════════════════════════════════════════════
+function zigzagPivots(){
+  const rows=candles; if(rows.length<40) return [];
+  const rngs=rows.slice(-150).map(c=>(c.high-c.low)/c.close);
+  const th=Math.max(.012, Math.min(.09, rngs.reduce((s,v)=>s+v,0)/rngs.length*3.5));
+  const piv=[]; let dir=0;
+  let hi={p:rows[0].high,i:0}, lo={p:rows[0].low,i:0};
+  for(let i=1;i<rows.length;i++){
+    const h=rows[i].high, l=rows[i].low;
+    if(h>hi.p) hi={p:h,i};
+    if(l<lo.p) lo={p:l,i};
+    if(dir>=0 && (hi.p-l)/hi.p>=th){           // 고점 확정 -> 하락 전환
+      if(dir!==0||hi.i>0) piv.push({price:hi.p, idx:hi.i, t:'H'});
+      dir=-1; lo={p:l,i};
+    } else if(dir<=0 && (h-lo.p)/lo.p>=th){    // 저점 확정 -> 상승 전환
+      piv.push({price:lo.p, idx:lo.i, t:'L'});
+      dir=1; hi={p:h,i};
+    }
+  }
+  piv.push(dir>=0?{price:hi.p,idx:hi.i,t:'H',live:1}:{price:lo.p,idx:lo.i,t:'L',live:1});
+  return piv.filter((p,i,a)=>i===0||p.t!==a[i-1].t); // 교대 보장
+}
+
+function tryImpulse(piv, bull){
+  // bull: L0-H1-L2-H3-L4-H5 / bear: 미러. 최근에서 과거로 시작점 이동하며 규칙 만족 최장 카운팅 탐색
+  const want = bull ? ['L','H','L','H','L','H'] : ['H','L','H','L','H','L'];
+  for(let s=Math.max(0,piv.length-6); s>=0 && s>=piv.length-9; s--){
+    const seg=piv.slice(s, s+6);
+    if(seg.length<3) continue;
+    if(!seg.every((p,i)=>p.t===want[i])) continue;
+    const P=seg.map(p=>p.price);
+    const sgn = bull?1:-1;
+    // 규칙1: 2파(P[2])가 시작점(P[0]) 이탈 불가
+    if(seg.length>=3 && sgn*(P[2]-P[0])<=0) continue;
+    // 규칙3: 4파(P[4])가 1파 고점(P[1]) 침범 불가
+    if(seg.length>=5 && sgn*(P[4]-P[1])<=0) continue;
+    // 규칙2: 3파 최단 불가 (완성된 파동만 비교)
+    const w1=Math.abs(P[1]-P[0]);
+    const w3=seg.length>=4?Math.abs(P[3]-P[2]):null;
+    const w5=seg.length>=6?Math.abs(P[5]-P[4]):null;
+    if(w3!=null && w5!=null && w3<w1 && w3<w5) continue;
+    if(w3!=null && w5==null && seg.length>=4 && !seg[3].live && w3<w1*0.618) continue;
+    return {seg, bull, waves:seg.length-1};
+  }
+  return null;
+}
+
+function waveAnalyze(){
+  const piv=zigzagPivots();
+  if(piv.length<3) return null;
+  const imp = tryImpulse(piv,true) || tryImpulse(piv,false);
+  const last=candles.at(-1).close;
+  if(imp){
+    const P=imp.seg.map(p=>p.price), b=imp.bull, sgn=b?1:-1, n=imp.waves;
+    const w1=Math.abs(P[1]-P[0]);
+    const r={type:'impulse', bull:b, seg:imp.seg, n, last};
+    r.fib={};
+    if(n>=1){ r.fib.w2_050=P[1]-sgn*w1*.5; r.fib.w2_618=P[1]-sgn*w1*.618; }
+    if(n>=2){ r.fib.w3_1618=P[2]+sgn*w1*1.618; r.fib.w3_2618=P[2]+sgn*w1*2.618; }
+    if(n>=3){ const w3=Math.abs(P[3]-P[2]); r.fib.w4_382=P[3]-sgn*w3*.382; r.fib.w4_236=P[3]-sgn*w3*.236; }
+    if(n>=4){ r.fib.w5_100=P[4]+sgn*w1; r.fib.w5_618=P[4]+sgn*Math.abs(P[3]-P[0])*.618; }
+    r.invalid = n>=4 ? P[1] : P[0];  // 4파 진행 중엔 1파 고점, 그 전엔 시작점
+    return r;
+  }
+  // 임펄스 실패 -> 조정 A-B-C 관점 (최근 4피벗)
+  const seg=piv.slice(-4);
+  if(seg.length<3) return null;
+  const P=seg.map(p=>p.price);
+  const down = seg.at(-1).t==='L' || P.at(-1)<P[0];
+  const wA=Math.abs(P[1]-P[0]), sgn=down?-1:1;
+  return {type:'abc', bull:!down, seg, last,
+    fib:{ c_100:P[2]+sgn*wA, c_1618:P[2]+sgn*wA*1.618 },
+    invalid:P[0]};
+}
+
+function waveConfidence(r){
+  let sc=5, why=[];
+  const P=r.seg.map(p=>p.price), b=r.bull, sgn=b?1:-1;
+  if(r.type==='impulse'){
+    if(r.n>=2){
+      const ret=Math.abs(P[1]-P[2])/Math.abs(P[1]-P[0]);
+      if(ret>=.382&&ret<=.786){sc++; why.push('2파 되돌림 '+(ret*100).toFixed(0)+'% 정상 범위');}
+      else {sc--; why.push('2파 되돌림 '+(ret*100).toFixed(0)+'% 비정형');}
+    }
+    if(r.n>=3){
+      const w1=Math.abs(P[1]-P[0]), w3=Math.abs(P[3]-P[2]);
+      if(w3>=w1*1.4){sc++; why.push('3파 연장('+(w3/w1).toFixed(2)+'배) 전형적');}
+    }
+    // RSI 다이버전스: 5파 구간에서 가격 신고점 + RSI 저점 -> 경고 가점(신뢰도엔 +)
+    try{
+      const rsiArr=candles.map((_,i)=>i).slice(-15);
+      const rsiEl=document.getElementById('lRSI').textContent;
+      if(r.n>=5 && rsiEl!=='--'){ why.push('5파 구간 — RSI 다이버전스 점검 필요(RSI '+rsiEl+')'); }
+    }catch(e){}
+    try{ // VPVR POC와 파동 매듭 겹침
+      const vp=calcVPVR(40); if(vp.length){
+        const poc=vp.reduce((a,x)=>x.vol>a.vol?x:a);
+        if(r.seg.some(p=>Math.abs(p.price-poc.price)/poc.price<.01)){sc++; why.push('파동 매듭이 VPVR POC 매물대와 일치');}
+      }
+    }catch(e){}
+  } else { why.push('임펄스 규칙 위반으로 조정(A-B-C) 관점 적용'); }
+  return {score:Math.max(1,Math.min(10,sc)), why};
+}
+
+function doWave(){
+  // 차트 오버레이 정리
+  waveFibLines.forEach(l=>{try{CS.removePriceLine(l);}catch(e){}}); waveFibLines=[];
+  if(waveLineS){ waveLineS.setData([]); try{waveLineS.setMarkers([]);}catch(e){} }
+  const box=document.getElementById('waveBox'), confEl=document.getElementById('waveConf');
+  if(!inds.WAVE||candles.length<40){ if(box)box.innerHTML='캔들 부족 또는 꺼짐'; if(confEl)confEl.textContent='--'; return; }
+  const r=waveAnalyze();
+  if(!r){ box.innerHTML='유효한 파동 구조 미검출 (횡보/데이터 부족)'; confEl.textContent='--'; return; }
+  const conf=waveConfidence(r), d2=dp(), f=v=>v!=null?v.toFixed(d2):'--';
+  const t=candles.map(c=>c.time);
+
+  // 1) 차트: 파동 경로 + 라벨
+  waveLineS.setData(r.seg.map(p=>({time:t[p.idx], value:p.price})));
+  const lbl = r.type==='impulse' ? ['0','1','2','3','4','5'] : ['0','A','B','C'];
+  try{
+    waveLineS.setMarkers(r.seg.map((p,i)=>({
+      time:t[p.idx], position:p.t==='H'?'aboveBar':'belowBar',
+      color:'#e1306c', shape:p.t==='H'?'arrowDown':'arrowUp',
+      text:lbl[i]||''
+    })));
+  }catch(e){}
+
+  // 2) 차트: 핵심 피보 타겟/무효화 라인
+  const addLine=(price,title,color)=>{ if(price==null||!isFinite(price))return;
+    waveFibLines.push(CS.createPriceLine({price,color,lineWidth:1,lineStyle:2,axisLabelVisible:true,title})); };
+  if(r.type==='impulse'){
+    if(r.n<=2){ addLine(r.fib.w2_050,'2파 0.5','#f0a500'); addLine(r.fib.w2_618,'2파 0.618','#f0a500'); }
+    if(r.n>=2){ addLine(r.fib.w3_1618,'3파 1.618 목표','#0ecb81'); }
+    if(r.n>=3){ addLine(r.fib.w4_382,'4파 0.382','#f0a500'); }
+    if(r.n>=4){ addLine(r.fib.w5_100,'5파 1.0 목표','#0ecb81'); }
+  } else {
+    addLine(r.fib.c_100,'C파 1:1 목표','#00d4ff'); addLine(r.fib.c_1618,'C파 1.618','#00d4ff');
+  }
+  addLine(r.invalid,'무효화선','#f6465d');
+
+  // 3) 사이드바 브리핑 (스킬 출력 양식 축약판)
+  confEl.textContent='신뢰도 '+conf.score+'/10';
+  const dirTxt=r.bull?'상승':'하락', col=r.bull?'var(--g)':'var(--r)';
+  let phase;
+  if(r.type==='impulse'){
+    const names=['1파 초입','1파 진행','2파 조정','3파 진행','4파 조정','5파 진행/마무리'];
+    phase=(r.bull?'상승':'하락')+' 임펄스 — '+names[Math.min(r.n,5)];
+  } else phase=(r.bull?'반등':'하락')+' 조정 A-B-C — C파 관점';
+  let html=`<div style="margin-bottom:6px"><b style="color:${col}">📌 ${phase}</b></div>`;
+  html+=`<div style="color:var(--tx3);margin-bottom:6px">${conf.why.map(w=>'· '+w).join('<br>')}</div>`;
+  if(r.type==='impulse'){
+    const P=r.seg.map(p=>p.price);
+    html+=`<div>1파: ${f(P[0])} → ${f(P[1])}</div>`;
+    if(r.n>=2) html+=`<div>2파 저점: ${f(P[2])}</div>`;
+    if(r.fib.w3_1618!=null) html+=`<div>3파 목표(1.618): <b style="color:var(--g)">${f(r.fib.w3_1618)}</b>${r.fib.w3_2618?' / 연장 '+f(r.fib.w3_2618):''}</div>`;
+    if(r.n>=3) html+=`<div>4파 눌림 예상: ${f(r.fib.w4_382)} ~ ${f(r.fib.w4_236)}</div>`;
+    if(r.n>=4) html+=`<div>5파 목표: ${f(r.fib.w5_100)} / ${f(r.fib.w5_618)}</div>`;
+  } else {
+    html+=`<div>C파 목표: <b style="color:var(--c)">${f(r.fib.c_100)}</b> (1:1) / ${f(r.fib.c_1618)} (1.618)</div>`;
+  }
+  html+=`<div style="margin-top:4px">⚠️ 무효화선: <b style="color:var(--r)">${f(r.invalid)}</b></div>`;
+  // 실전 가이드
+  let guide;
+  if(r.type==='impulse'){
+    if(r.n<=2) guide=r.bull?`2파 눌림 ${f(r.fib.w2_050)}~${f(r.fib.w2_618)} 분할 롱 / SL ${f(r.invalid)}`:`2파 반등 ${f(r.fib.w2_050)}~${f(r.fib.w2_618)} 분할 숏 / SL ${f(r.invalid)}`;
+    else if(r.n===3) guide=(r.bull?'롱':'숏')+` 보유 — TP1 ${f(r.fib.w3_1618)} / SL 2파 ${r.bull?'저점':'고점'} ${f(r.seg[2].price)}`;
+    else if(r.n===4) guide=`4파 되돌림 ${f(r.fib.w4_382)} 부근 ${r.bull?'롱':'숏'} 재진입 / SL ${f(r.invalid)}`;
+    else guide=`5파 구간 — 다이버전스 확인 후 익절/반대 관점 준비, 신규 진입 관망`;
+  } else guide=`C파 목표 ${f(r.fib.c_100)} 도달 시 반전 확인 후 진입 검토, 그 전 관망`;
+  html+=`<div style="margin-top:4px;padding:6px;border-radius:6px;background:rgba(225,48,108,.08);border:1px solid rgba(225,48,108,.25)">💡 ${guide}</div>`;
+  html+=`<div style="margin-top:4px;color:var(--tx3);font-size:10px">기술적 분석 참고용 · 투자 권유 아님</div>`;
+  box.innerHTML=html;
 }
 
 function doSidebar() {
