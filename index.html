@@ -1042,7 +1042,12 @@ function drawVPVR(){
 function zigzagPivots(rows){
   rows=rows||candles; if(rows.length<40) return [];
   const rngs=rows.slice(-150).map(c=>(c.high-c.low)/c.close);
-  const th=Math.max(.012, Math.min(.09, rngs.reduce((s,v)=>s+v,0)/rngs.length*3.5));
+  // 하한 0.012(1.2%)는 저타임프레임에서 과대했다. 1분봉 평균 변동폭이 0.055%라
+  // 임계가 실제 변동의 20배로 잡혀 피봇이 2개까지 무너졌고(카운팅 최소 6개) 파동이 뜨지 않았다.
+  // 실측 피봇 수 (BTCUSDT 300봉) 1m/5m/15m/1h/4h/1d:
+  //   하한 1.2%  -> 2 / 2 / 4 / 16 / 29 / 34   (1m~15m 카운팅 불가)
+  //   하한 0.2%  -> 10 / 15 / 34 / 16 / 29 / 34 (1h 이상은 하한 미적용이라 값 불변)
+  const th=Math.max(.002, Math.min(.09, rngs.reduce((s,v)=>s+v,0)/rngs.length*3.5));
   const piv=[]; let dir=0;
   let hi={p:rows[0].high,i:0}, lo={p:rows[0].low,i:0};
   for(let i=1;i<rows.length;i++){
@@ -1061,13 +1066,22 @@ function zigzagPivots(rows){
   return piv.filter((p,i,a)=>i===0||p.t!==a[i-1].t); // 교대 보장
 }
 
-function tryImpulse(piv, bull){
+function tryImpulse(piv, bull, barCount){
   // bull: L0-H1-L2-H3-L4-H5 / bear: 미러. 최근에서 과거로 시작점 이동하며 규칙 만족 최장 카운팅 탐색
   const want = bull ? ['L','H','L','H','L','H'] : ['H','L','H','L','H','L'];
-  for(let s=Math.max(0,piv.length-6); s>=0 && s>=piv.length-9; s--){
+  // 탐색 범위를 피봇 9개로 자르면 피봇이 30개 넘는 구간에서 유효 파동을 통째로 놓쳤다
+  // (실측 15m/1d - depth9에선 검출 실패, 전체 탐색 시 검출). 전체를 훑되
+  // "최근성"으로 거른다: 파동 끝이 한참 과거면 현재가와 무관한 옛 파동이라 매매 가이드로 쓸 수 없다.
+  // (무제한 탐색만 하면 15m에서 256캔들 전, 1d에서 170캔들 전 파동을 집어온다)
+  const maxStale = barCount ? Math.max(20, Math.round(barCount * 0.25)) : Infinity;
+  for(let s=Math.max(0,piv.length-6); s>=0; s--){
     const seg=piv.slice(s, s+6);
     if(seg.length<3) continue;
     if(!seg.every((p,i)=>p.t===want[i])) continue;
+    if(barCount){
+      const endIdx = seg.at(-1).idx;
+      if((barCount - 1 - endIdx) > maxStale) continue;  // 너무 오래된 파동은 채택하지 않음
+    }
     const P=seg.map(p=>p.price);
     const sgn = bull?1:-1;
     // 규칙1: 2파(P[2])가 시작점(P[0]) 이탈 불가
@@ -1089,7 +1103,7 @@ function waveAnalyze(rows){
   rows=rows||candles;
   const piv=zigzagPivots(rows);
   if(piv.length<3) return null;
-  const imp = tryImpulse(piv,true) || tryImpulse(piv,false);
+  const imp = tryImpulse(piv,true,rows.length) || tryImpulse(piv,false,rows.length);
   const last=rows.at(-1).close;
   if(imp){
     const P=imp.seg.map(p=>p.price), b=imp.bull, sgn=b?1:-1, n=imp.waves;
