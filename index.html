@@ -1156,7 +1156,102 @@ function waveConfidence(r, rows){
   return {score:Math.max(1,Math.min(10,sc)), why};
 }
 
-function doWave(rows, symLabel){
+// ══════════════════════════════════════════════════════════
+//  파동 신뢰등급 v2 (coin-wave-analysis-v2 스킬 이식)
+//  패턴마다 신뢰 상한을 두고, A/B 등급만 매매안을 낸다.
+//  삼각형·복합조정은 사후 해석이 자유로워 실시간 신뢰가 낮으므로
+//  상한 자체를 매매선(65) 아래로 잡아 구조적으로 걸러낸다.
+// ══════════════════════════════════════════════════════════
+const WAVE_TIER = {
+  IMPULSE_3:{base:88, ceiling:100, label:'임펄스 3파 (최고 신뢰)'},
+  ZIGZAG_C: {base:74, ceiling:92,  label:'지그재그 C파 (샤프 조정)'},
+  IMPULSE_5:{base:72, ceiling:90,  label:'임펄스 5파 (종료 임박)'},
+  WAVE_2:   {base:70, ceiling:90,  label:'2파 되돌림 (3파 진입 대기)'},
+  WAVE_4:   {base:60, ceiling:82,  label:'4파 되돌림 (교대 법칙)'},
+  FLAT:     {base:48, ceiling:70,  label:'플랫 조정 (횡보)'},
+  TRIANGLE: {base:38, ceiling:58,  label:'삼각 수렴 (해석 다의성)'},
+  COMPLEX:  {base:30, ceiling:50,  label:'복합 조정 (카운팅 불안정)'},
+  UNKNOWN:  {base:25, ceiling:45,  label:'미확정'}
+};
+// 코인은 24/7 고변동이라 저타임프레임 파동이 쉽게 무너진다.
+const WAVE_TFW = {'1m':-18,'3m':-15,'5m':-12,'15m':-8,'30m':-5,'1h':0,'2h':2,'4h':5,'6h':6,'8h':6,'12h':7,'1d':8,'3d':8,'1w':8};
+
+// 조정 세부형: B파 되돌림 깊이로 지그재그/플랫/삼각형을 가른다(엘리엇 표준 구분).
+function waveCorrectiveKind(seg){
+  if(!seg || seg.length<3) return 'COMPLEX';
+  const P=seg.map(p=>p.price);
+  const legA=Math.abs(P[1]-P[0]); if(!(legA>0)) return 'COMPLEX';
+  const legB=Math.abs(P[2]-P[1]);
+  // 삼각형: 연속 스윙이 단조 축소
+  if(seg.length>=4){
+    const legC=Math.abs(P[3]-P[2]);
+    if(legB<=legA*0.9 && legC<=legB*0.9) return 'TRIANGLE';
+  }
+  const ret=legB/legA;
+  if(ret>=0.9) return 'FLAT';
+  if(ret<=0.618) return 'ZIGZAG_C';
+  return 'COMPLEX';
+}
+
+function wavePatternKey(r){
+  if(!r) return 'UNKNOWN';
+  if(r.type==='impulse'){
+    if(r.n>=5) return 'IMPULSE_5';
+    if(r.n===4) return 'WAVE_4';
+    if(r.n===3) return 'IMPULSE_3';   // 3파 진행 중 = 최강 임펄스
+    if(r.n===2) return 'WAVE_2';
+    return 'UNKNOWN';
+  }
+  return waveCorrectiveKind(r.seg);
+}
+
+// mtf: 1=상위TF 일치, -1=역행, 0=불명
+function waveGrade(r, conf, tfKey, mtf){
+  const key=wavePatternKey(r), tier=WAVE_TIER[key]||WAVE_TIER.UNKNOWN;
+  const notes=[tier.label];
+  let score=tier.base;
+
+  // 확증지표(1~10)를 ±12점 폭으로 반영
+  if(conf && typeof conf.score==='number'){ score+=(conf.score-5)*2.4; notes.push('확증 '+conf.score+'/10'); }
+
+  const tfw=WAVE_TFW[tfKey]??0;
+  if(tfw!==0){ score+=tfw; notes.push(tfKey+' 가중 '+(tfw>0?'+':'')+tfw); }
+
+  // 상한은 MTF 조정 "전에" 건다. 뒤에 걸면 천장에 닿은 점수에서 역행 감점이
+  // 통째로 흡수돼(113→100→93) 일치와 차이가 거의 없어져 카운터 트렌드가 안 걸러진다.
+  score=Math.min(tier.ceiling, score);
+  if(mtf===1){ score+=6; notes.push('상위 TF 일치'); }
+  else if(mtf===-1){ score-=30; notes.push('상위 TF 역행 — 카운터 트렌드'); }
+
+  score=Math.round(Math.max(0, Math.min(tier.ceiling, score)));
+  const grade = score>=80?'A' : score>=65?'B' : score>=50?'C' : 'D';
+  return {key, label:tier.label, score, grade, ceiling:tier.ceiling,
+          tradable:(grade==='A'||grade==='B'), why:notes.join(' · ')};
+}
+
+// 상위 TF 방향 캐시. 파동 갱신은 라이브 틱마다 돌지만 상위 TF는 그만큼 자주 안 바뀐다.
+const waveMtfCache = new Map();   // key: symbol|tf -> {dir, at}
+const WAVE_MTF_TTL = 5*60*1000;
+// 각 TF의 상위 확인 대상. 자기보다 한참 위를 봐야 추세 역행이 드러난다.
+const WAVE_MTF_PARENT = {'1m':'1h','3m':'1h','5m':'1h','15m':'4h','30m':'4h','1h':'4h','2h':'12h','4h':'1d','6h':'1d','8h':'1d','12h':'1d','1d':'1w','3d':'1w'};
+
+async function waveMtfDir(symbol, tfKey){
+  const parent=WAVE_MTF_PARENT[tfKey];
+  if(!parent) return 0;
+  const ck=symbol+'|'+parent, hit=waveMtfCache.get(ck);
+  if(hit && Date.now()-hit.at < WAVE_MTF_TTL) return hit.dir;
+  try{
+    const res=await fetchCandlesForSymbol(symbol, null, parent);
+    const rows=res && res.candles;
+    if(!rows || rows.length<40) return 0;
+    const pr=waveAnalyze(rows);
+    const dir = pr ? (pr.bull?1:-1) : 0;
+    waveMtfCache.set(ck,{dir, at:Date.now()});
+    return dir;
+  }catch(e){ return 0; }
+}
+
+function doWave(rows, symLabel, tfLabel){
   const isMain = !rows || rows===candles;
   rows = rows||candles;
   // 차트 오버레이 정리 (메인 차트 분석일 때만 그림)
@@ -1172,6 +1267,15 @@ function doWave(rows, symLabel){
   if(!r){ if(canWriteBox){ box.innerHTML='유효한 파동 구조 미검출 (횡보/데이터 부족)'; confEl.textContent='--'; } return; }
   const conf=waveConfidence(r, rows), d2=isMain?dp():dpFor(rows.at(-1).close), f=v=>v!=null?v.toFixed(d2):'--';
   const t=rows.map(c=>c.time);
+  // v2 등급. 상위 TF 방향은 비동기 조회라 캐시 히트 전에는 0(불명)으로 매긴 뒤,
+  // 조회가 끝나면 doWave를 다시 돌려 등급을 확정한다.
+  const gSym = symLabel || (isMain ? sym : null);
+  const gTf = tfLabel || tf;
+  const mtfKey = gSym ? gSym+'|'+(WAVE_MTF_PARENT[gTf]||'') : null;
+  const cached = mtfKey ? waveMtfCache.get(mtfKey) : null;
+  const mtfDir = (cached && Date.now()-cached.at < WAVE_MTF_TTL) ? cached.dir : 0;
+  const grade = waveGrade(r, conf, gTf, mtfDir===0?0:(r.bull?1:-1)===mtfDir?1:-1);
+  if(gSym && !cached) waveMtfDir(gSym, gTf).then(d=>{ if(d) doWave(rows, symLabel, tfLabel); }).catch(()=>{});
 
   // 1) 차트: 파동 경로 + 라벨
   if(isMain) waveLineS.setData(r.seg.map(p=>({time:t[p.idx], value:p.price})));
@@ -1200,15 +1304,20 @@ function doWave(rows, symLabel){
   // 3) 사이드바 브리핑 (스킬 출력 양식 축약판)
   if(!canWriteBox) return;
   const symTxt = symLabel ? symLabel.replace('USDT','') : (isMain ? sym.replace('USDT','') : '');
-  confEl.textContent=(symTxt?symTxt+' · ':'')+'신뢰도 '+conf.score+'/10';
+  confEl.textContent=(symTxt?symTxt+' · ':'')+grade.grade+'등급 '+grade.score+'점';
   const dirTxt=r.bull?'상승':'하락', col=r.bull?'var(--g)':'var(--r)';
   let phase;
   if(r.type==='impulse'){
     const names=['1파 초입','1파 진행','2파 조정','3파 진행','4파 조정','5파 진행/마무리'];
     phase=(r.bull?'상승':'하락')+' 임펄스 — '+names[Math.min(r.n,5)];
   } else phase=(r.bull?'반등':'하락')+' 조정 A-B-C — C파 관점';
+  const gCol = grade.grade==='A'?'#0ecb81' : grade.grade==='B'?'#f0a500' : 'var(--tx3)';
   let html=`<div style="margin-bottom:6px"><b style="color:${col}">📌 ${phase}</b></div>`;
-  html+=`<div style="color:var(--tx3);margin-bottom:6px">${conf.why.map(w=>'· '+w).join('<br>')}</div>`;
+  html+=`<div style="margin-bottom:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">`
+     +`<span style="padding:1px 7px;border-radius:10px;font-weight:700;color:#fff;background:${gCol}">${grade.grade}등급 ${grade.score}점</span>`
+     +`<span style="color:var(--tx3);font-size:11px">${grade.label} · 상한 ${grade.ceiling}</span>`
+     +`<span style="font-size:11px;color:${grade.tradable?'#0ecb81':'var(--tx3)'}">${grade.tradable?'★ 매매가능':'— 관망'}</span></div>`;
+  html+=`<div style="color:var(--tx3);margin-bottom:6px">· ${grade.why}<br>${conf.why.map(w=>'· '+w).join('<br>')}</div>`;
   if(r.type==='impulse'){
     const P=r.seg.map(p=>p.price);
     html+=`<div>1파: ${f(P[0])} → ${f(P[1])}</div>`;
@@ -1228,7 +1337,14 @@ function doWave(rows, symLabel){
     else if(r.n===4) guide=`4파 되돌림 ${f(r.fib.w4_382)} 부근 ${r.bull?'롱':'숏'} 재진입 / SL ${f(r.invalid)}`;
     else guide=`5파 구간 — 다이버전스 확인 후 익절/반대 관점 준비, 신규 진입 관망`;
   } else guide=`C파 목표 ${f(r.fib.c_100)} 도달 시 반전 확인 후 진입 검토, 그 전 관망`;
-  html+=`<div style="margin-top:4px;padding:6px;border-radius:6px;background:rgba(225,48,108,.08);border:1px solid rgba(225,48,108,.25)">💡 ${guide}</div>`;
+  // v2: A/B 등급만 매매안을 낸다. C/D는 신뢰도 미달이므로 관망으로 강등한다.
+  // (저신뢰 카운팅으로 진입시키지 않는 것이 v2의 존재 이유)
+  if(!grade.tradable){
+    guide=`관망 — ${grade.grade}등급(${grade.score}점) 신뢰도 미달. ${grade.label}. 진입 근거로 쓰지 말 것`;
+  }
+  const gBg = grade.tradable ? 'rgba(225,48,108,.08)' : 'rgba(255,255,255,.04)';
+  const gBd = grade.tradable ? 'rgba(225,48,108,.25)' : 'rgba(255,255,255,.12)';
+  html+=`<div style="margin-top:4px;padding:6px;border-radius:6px;background:${gBg};border:1px solid ${gBd}">${grade.tradable?'💡':'⏸️'} ${guide}</div>`;
   html+=`<div style="margin-top:4px;color:var(--tx3);font-size:10px">기술적 분석 참고용 · 투자 권유 아님</div>`;
   box.innerHTML=html;
 }
@@ -2120,7 +2236,7 @@ function applySnapshotToSidebar(item) {
   safeRun('MACD(분할)', () => doMACD(12, 26, 9, rows));
   safeRun('CCI(분할)', () => doCCI(20, rows));
   safeRun('스토캐스틱(분할)', () => doStoch(14, 3, 3, rows));
-  safeRun('엘리엇 파동(분할)', () => doWave(rows, item.symbol));
+  safeRun('엘리엇 파동(분할)', () => doWave(rows, item.symbol, item.tf));
   const lastRow = rows.at(-1);
   const chgPct = ((lastRow.close - rows[0].open) / rows[0].open) * 100;
   renderPriceBox({ symbol: item.symbol, exchange: item.exchange, price: lastRow.close, chgPct, hi: null, lo: null, d2: snap.d2 });
