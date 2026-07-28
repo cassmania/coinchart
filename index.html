@@ -1157,98 +1157,123 @@ function waveConfidence(r, rows){
 }
 
 // ══════════════════════════════════════════════════════════
-//  파동 신뢰등급 v2 (coin-wave-analysis-v2 스킬 이식)
-//  패턴마다 신뢰 상한을 두고, A/B 등급만 매매안을 낸다.
-//  삼각형·복합조정은 사후 해석이 자유로워 실시간 신뢰가 낮으므로
-//  상한 자체를 매매선(65) 아래로 잡아 구조적으로 걸러낸다.
+//  v4 신뢰등급 — 백테스트 실측 기대값 채점 (coin-wave-analysis-v3 스킬 이식)
+//
+//  기존 waveConfidence()의 1~10점은 그대로 두고, 그 위에 실측 등급을 얹는다.
+//  등급은 패턴 x 확증대 x 손절폭 x MA정렬 x RSI 5축 조합의 실측 기대값(R)이며
+//  15개 심볼·일봉 8,778건 백테스트에서 나온 값이다.
+//
+//  아웃샘플 성능: 워크포워드 69.6% / +0.831R, 심볼 홀드아웃 76.5% / +0.917R
+//  (무필터 전량은 48.4% / +0.26R)
+//
+//  실측에서 뒤집힌 통념:
+//   - 다중 타임프레임 합의는 판별력이 없었다(일치 48.7% vs 역행 48.4%)
+//   - 임펄스 3파는 승률 63%지만 목표가가 가까워 기대값 +0.28R에 그친다
+//   - 손절폭이 ATR 1배 미만이면 승률 31.9%, 2배 이상이면 72% — 최강 변수
+//   - RSI는 높을수록 유리하다(LONG 58+ 승률 72.7% vs 42미만 31.7%).
+//     과매도 저점 잡기가 아니라 강세 유지 중 되돌림 매수가 먹힌다.
 // ══════════════════════════════════════════════════════════
-const WAVE_TIER = {
-  IMPULSE_3:{base:88, ceiling:100, label:'임펄스 3파 (최고 신뢰)'},
-  ZIGZAG_C: {base:74, ceiling:92,  label:'지그재그 C파 (샤프 조정)'},
-  IMPULSE_5:{base:72, ceiling:90,  label:'임펄스 5파 (종료 임박)'},
-  WAVE_2:   {base:70, ceiling:90,  label:'2파 되돌림 (3파 진입 대기)'},
-  WAVE_4:   {base:60, ceiling:82,  label:'4파 되돌림 (교대 법칙)'},
-  FLAT:     {base:48, ceiling:70,  label:'플랫 조정 (횡보)'},
-  TRIANGLE: {base:38, ceiling:58,  label:'삼각 수렴 (해석 다의성)'},
-  COMPLEX:  {base:30, ceiling:50,  label:'복합 조정 (카운팅 불안정)'},
-  UNKNOWN:  {base:25, ceiling:45,  label:'미확정'}
+const WAVE_CELL_EV = {
+  'WAVE_2 c6-7 a1-2 m- r中':1.1943,'WAVE_2 c8+ a2+ m+ r高':1.1427,
+  'WAVE_2 c8+ a1-2 m+ r高':1.1171,'WAVE_2 c6-7 a1-2 m+ r高':0.9705,
+  'WAVE_2 c8+ a<1 m+ r中':0.9240,'WAVE_2 c8+ a2+ m+ r中':0.8776,
+  'WAVE_2 c6-7 a<1 m+ r高':0.8607,'WAVE_2 c8+ a1-2 m+ r中':0.8393,
+  'WAVE_2 c6-7 a2+ m- r低':0.7041,'WAVE_2 c<6 a1-2 m- r中':0.6370,
+  'IMPULSE_3 c6-7 a2+ m- r中':0.5421,'WAVE_2 c6-7 a1-2 m- r低':0.4457,
+  'WAVE_2 c<6 a<1 m- r中':0.4079,'WAVE_2 c6-7 a<1 m+ r中':0.4028,
+  'IMPULSE_5 c<6 a<1 m- r低':0.3587,'IMPULSE_5 c6-7 a<1 m- r低':0.3338,
+  'WAVE_2 c6-7 a1-2 m+ r中':0.3302,'IMPULSE_3 c8+ a1-2 m+ r中':0.2623,
+  'IMPULSE_3 c8+ a2+ m+ r高':0.2586,'WAVE_2 c8+ a1-2 m+ r低':0.2462,
+  'IMPULSE_5 c8+ a1-2 m+ r低':0.2393,'IMPULSE_5 c<6 a1-2 m- r低':0.2347,
+  'IMPULSE_5 c8+ a1-2 m+ r高':0.2139,'IMPULSE_3 c8+ a2+ m+ r中':0.2089,
+  'IMPULSE_5 c6-7 a2+ m+ r高':0.2059,'WAVE_2 c8+ a<1 m+ r低':0.2011,
+  'WAVE_2 c6-7 a<1 m- r低':0.1905,'IMPULSE_5 c8+ a2+ m+ r高':0.1801,
+  'IMPULSE_5 c6-7 a1-2 m- r低':0.1261,'IMPULSE_5 c6-7 a1-2 m+ r低':0.1184,
+  'IMPULSE_5 c<6 a2+ m- r高':0.1164,'WAVE_2 c8+ a2+ m+ r低':0.0815,
+  'IMPULSE_3 c8+ a1-2 m+ r高':0.0197,'IMPULSE_5 c8+ a<1 m+ r低':-0.1084,
+  'IMPULSE_5 c6-7 a<1 m+ r低':-0.1309,'WAVE_2 c<6 a1-2 m- r低':-0.4230,
+  'WAVE_2 c6-7 a1-2 m+ r低':-0.5771,'WAVE_2 c6-7 a<1 m+ r低':-0.5961,
+  'WAVE_2 c<6 a<1 m- r低':-0.6578
 };
-// 코인은 24/7 고변동이라 저타임프레임 파동이 쉽게 무너진다.
-const WAVE_TFW = {'1m':-18,'3m':-15,'5m':-12,'15m':-8,'30m':-5,'1h':0,'2h':2,'4h':5,'6h':6,'8h':6,'12h':7,'1d':8,'3d':8,'1w':8};
+const WAVE_TRADE_CUT = 0.5;      // 이 미만은 전부 관망
+const WAVE_ATR_MULT = 2;         // 트레일링 폭. 청산 10종 비교에서 채택된 값
 
-// 조정 세부형: B파 되돌림 깊이로 지그재그/플랫/삼각형을 가른다(엘리엇 표준 구분).
-function waveCorrectiveKind(seg){
-  if(!seg || seg.length<3) return 'COMPLEX';
-  const P=seg.map(p=>p.price);
-  const legA=Math.abs(P[1]-P[0]); if(!(legA>0)) return 'COMPLEX';
-  const legB=Math.abs(P[2]-P[1]);
-  // 삼각형: 연속 스윙이 단조 축소
-  if(seg.length>=4){
-    const legC=Math.abs(P[3]-P[2]);
-    if(legB<=legA*0.9 && legC<=legB*0.9) return 'TRIANGLE';
+/** ATR(14) — 손절폭 정규화용. 앱에 없던 지표라 여기서 계산한다. */
+function calcATR(rows, period){
+  period = period||14;
+  if(!rows || rows.length < period+1) return 0;
+  let s=0;
+  for(let i=rows.length-period;i<rows.length;i++){
+    const c=rows[i], p=rows[i-1];
+    s += Math.max(c.high-c.low, Math.abs(c.high-p.close), Math.abs(c.low-p.close));
   }
-  const ret=legB/legA;
-  if(ret>=0.9) return 'FLAT';
-  if(ret<=0.618) return 'ZIGZAG_C';
-  return 'COMPLEX';
+  return s/period;
 }
 
-function wavePatternKey(r){
-  if(!r) return 'UNKNOWN';
+/**
+ * 파동 결과를 v4 조합 키로 환원.
+ * 앱의 파동 카운팅(zigzag)은 스킬 엔진과 구현이 다르지만, 국면·확증·손절폭은
+ * 같은 의미로 산출되므로 조합표를 그대로 쓸 수 있다.
+ */
+function waveGradeV4(r, conf, rows){
+  rows = rows||candles;
+  const px = rows.at(-1).close;
+
+  // 패턴: 조정이면 파동 번호가 아니라 ABC이므로 임펄스만 번호로 가른다
+  let pattern;
   if(r.type==='impulse'){
-    if(r.n>=5) return 'IMPULSE_5';
-    if(r.n===4) return 'WAVE_4';
-    if(r.n===3) return 'IMPULSE_3';   // 3파 진행 중 = 최강 임펄스
-    if(r.n===2) return 'WAVE_2';
-    return 'UNKNOWN';
+    pattern = r.n>=4 ? 'IMPULSE_5' : r.n>=3 ? 'IMPULSE_3' : 'WAVE_2';
+  } else {
+    pattern = 'ZIGZAG_C';
   }
-  return waveCorrectiveKind(r.seg);
-}
 
-// mtf: 1=상위TF 일치, -1=역행, 0=불명
-function waveGrade(r, conf, tfKey, mtf){
-  const key=wavePatternKey(r), tier=WAVE_TIER[key]||WAVE_TIER.UNKNOWN;
-  const notes=[tier.label];
-  let score=tier.base;
+  // 방향: 파동 구조가 상승이면 LONG, 하락이면 SHORT
+  const isLong = !!r.bull;
 
-  // 확증지표(1~10)를 ±12점 폭으로 반영
-  if(conf && typeof conf.score==='number'){ score+=(conf.score-5)*2.4; notes.push('확증 '+conf.score+'/10'); }
+  // 손절폭 = 무효화선까지의 거리. 스킬에서 최강 변수였다.
+  const atr = calcATR(rows);
+  const slDist = Math.abs(px - r.invalid);
+  if(!(atr>0) || !(slDist>0)) return null;
+  const slMult = slDist/atr;
+  const aBand = slMult>=2 ? 'a2+' : slMult>=1 ? 'a1-2' : 'a<1';
 
-  const tfw=WAVE_TFW[tfKey]??0;
-  if(tfw!==0){ score+=tfw; notes.push(tfKey+' 가중 '+(tfw>0?'+':'')+tfw); }
+  // MA 정렬: EMA20 vs SMA60이 파동 방향과 일치하는가
+  // ema()/ma() 둘 다 종가 배열을 받아 숫자 배열을 돌려준다(ma는 워밍업 구간이 null).
+  const closes = rows.map(c=>c.close);
+  const e20v = ema(closes,20).at(-1);
+  const s60v = ma(closes,60).at(-1);
+  if(!(e20v>0) || !(s60v>0)) return null;
+  const mBand = (isLong === (e20v>s60v)) ? 'm+' : 'm-';
 
-  // 상한은 MTF 조정 "전에" 건다. 뒤에 걸면 천장에 닿은 점수에서 역행 감점이
-  // 통째로 흡수돼(113→100→93) 일치와 차이가 거의 없어져 카운터 트렌드가 안 걸러진다.
-  score=Math.min(tier.ceiling, score);
-  if(mtf===1){ score+=6; notes.push('상위 TF 일치'); }
-  else if(mtf===-1){ score-=30; notes.push('상위 TF 역행 — 카운터 트렌드'); }
+  // RSI 방향 보정: SHORT는 100에서 빼 "내 방향의 추세가 살아있나"로 통일
+  const rsiRaw = calcRSILast(closes);
+  if(rsiRaw==null || !isFinite(rsiRaw)) return null;
+  const rsiAdj = isLong ? rsiRaw : 100-rsiRaw;
+  const rBand = rsiAdj>=58 ? 'r高' : rsiAdj>=52 ? 'r中' : 'r低';
 
-  score=Math.round(Math.max(0, Math.min(tier.ceiling, score)));
-  const grade = score>=80?'A' : score>=65?'B' : score>=50?'C' : 'D';
-  return {key, label:tier.label, score, grade, ceiling:tier.ceiling,
-          tradable:(grade==='A'||grade==='B'), why:notes.join(' · ')};
-}
+  const cBand = conf>=8 ? 'c8+' : conf>=6 ? 'c6-7' : 'c<6';
+  const cell = pattern+' '+cBand+' '+aBand+' '+mBand+' '+rBand;
 
-// 상위 TF 방향 캐시. 파동 갱신은 라이브 틱마다 돌지만 상위 TF는 그만큼 자주 안 바뀐다.
-const waveMtfCache = new Map();   // key: symbol|tf -> {dir, at}
-const WAVE_MTF_TTL = 5*60*1000;
-// 각 TF의 상위 확인 대상. 자기보다 한참 위를 봐야 추세 역행이 드러난다.
-const WAVE_MTF_PARENT = {'1m':'1h','3m':'1h','5m':'1h','15m':'4h','30m':'4h','1h':'4h','2h':'12h','4h':'1d','6h':'1d','8h':'1d','12h':'1d','1d':'1w','3d':'1w'};
+  const known = Object.prototype.hasOwnProperty.call(WAVE_CELL_EV, cell);
+  const ev = known ? WAVE_CELL_EV[cell] : 0;
+  const grade = ev>=0.9 ? 'A' : ev>=WAVE_TRADE_CUT ? 'B' : ev>=0.2 ? 'C' : 'D';
 
-async function waveMtfDir(symbol, tfKey){
-  const parent=WAVE_MTF_PARENT[tfKey];
-  if(!parent) return 0;
-  const ck=symbol+'|'+parent, hit=waveMtfCache.get(ck);
-  if(hit && Date.now()-hit.at < WAVE_MTF_TTL) return hit.dir;
-  try{
-    const res=await fetchCandlesForSymbol(symbol, null, parent);
-    const rows=res && res.candles;
-    if(!rows || rows.length<40) return 0;
-    const pr=waveAnalyze(rows);
-    const dir = pr ? (pr.bull?1:-1) : 0;
-    waveMtfCache.set(ck,{dir, at:Date.now()});
-    return dir;
-  }catch(e){ return 0; }
+  const notes=[];
+  if(aBand==='a<1') notes.push('손절폭 ATR 1배 미만 — 잡음 피격 위험');
+  if(mBand==='m-') notes.push('MA20/60 역행');
+  if(cBand==='c<6') notes.push('확증 6점 미만');
+  if(rBand==='r低') notes.push('RSI 추세 약화 — 실측 승률 최하 구간');
+  if(!known) notes.push('백테스트 표본 부족 조합 — 미검증');
+
+  return {
+    cell, ev, grade, known,
+    tradable: known && ev>=WAVE_TRADE_CUT,
+    isLong, atr, slMult:+slMult.toFixed(2), rsiAdj:+rsiAdj.toFixed(1),
+    entry:px, sl:r.invalid,
+    trailDistance: atr*WAVE_ATR_MULT,
+    breakeven: isLong ? px+atr*WAVE_ATR_MULT : px-atr*WAVE_ATR_MULT,
+    notes
+  };
 }
 
 function doWave(rows, symLabel, tfLabel){
@@ -1267,15 +1292,9 @@ function doWave(rows, symLabel, tfLabel){
   if(!r){ if(canWriteBox){ box.innerHTML='유효한 파동 구조 미검출 (횡보/데이터 부족)'; confEl.textContent='--'; } return; }
   const conf=waveConfidence(r, rows), d2=isMain?dp():dpFor(rows.at(-1).close), f=v=>v!=null?v.toFixed(d2):'--';
   const t=rows.map(c=>c.time);
-  // v2 등급. 상위 TF 방향은 비동기 조회라 캐시 히트 전에는 0(불명)으로 매긴 뒤,
-  // 조회가 끝나면 doWave를 다시 돌려 등급을 확정한다.
-  const gSym = symLabel || (isMain ? sym : null);
-  const gTf = tfLabel || tf;
-  const mtfKey = gSym ? gSym+'|'+(WAVE_MTF_PARENT[gTf]||'') : null;
-  const cached = mtfKey ? waveMtfCache.get(mtfKey) : null;
-  const mtfDir = (cached && Date.now()-cached.at < WAVE_MTF_TTL) ? cached.dir : 0;
-  const grade = waveGrade(r, conf, gTf, mtfDir===0?0:(r.bull?1:-1)===mtfDir?1:-1);
-  if(gSym && !cached) waveMtfDir(gSym, gTf).then(d=>{ if(d) doWave(rows, symLabel, tfLabel); }).catch(()=>{});
+  // v2가 쓰던 상위 TF(MTF) 합의 조회는 제거했다. 백테스트 8,778건에서
+  // 일치 48.7% vs 역행 48.4%로 판별력이 없었고, v2는 역행에 -30점을 때려
+  // 오히려 좋은 신호를 강등시키고 있었다. 비동기 재조회도 함께 사라진다.
 
   // 1) 차트: 파동 경로 + 라벨
   if(isMain) waveLineS.setData(r.seg.map(p=>({time:t[p.idx], value:p.price})));
@@ -1304,20 +1323,31 @@ function doWave(rows, symLabel, tfLabel){
   // 3) 사이드바 브리핑 (스킬 출력 양식 축약판)
   if(!canWriteBox) return;
   const symTxt = symLabel ? symLabel.replace('USDT','') : (isMain ? sym.replace('USDT','') : '');
-  confEl.textContent=(symTxt?symTxt+' · ':'')+grade.grade+'등급 '+grade.score+'점';
+  // v4 실측 등급. 입력(ATR/MA/RSI)이 하나라도 없으면 null이 오고, 그때는
+  // 임의값으로 채우지 않고 등급 표시를 생략한다.
+  const gv4 = (function(){ try{ return waveGradeV4(r, conf.score, rows); }catch(e){ return null; } })();
+  confEl.textContent = gv4
+    ? (symTxt?symTxt+' · ':'')+gv4.grade+'등급 '+(gv4.ev>=0?'+':'')+gv4.ev.toFixed(2)+'R'
+    : (symTxt?symTxt+' · ':'')+'신뢰도 '+conf.score+'/10';
   const dirTxt=r.bull?'상승':'하락', col=r.bull?'var(--g)':'var(--r)';
   let phase;
   if(r.type==='impulse'){
     const names=['1파 초입','1파 진행','2파 조정','3파 진행','4파 조정','5파 진행/마무리'];
     phase=(r.bull?'상승':'하락')+' 임펄스 — '+names[Math.min(r.n,5)];
   } else phase=(r.bull?'반등':'하락')+' 조정 A-B-C — C파 관점';
-  const gCol = grade.grade==='A'?'#0ecb81' : grade.grade==='B'?'#f0a500' : 'var(--tx3)';
   let html=`<div style="margin-bottom:6px"><b style="color:${col}">📌 ${phase}</b></div>`;
-  html+=`<div style="margin-bottom:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">`
-     +`<span style="padding:1px 7px;border-radius:10px;font-weight:700;color:#fff;background:${gCol}">${grade.grade}등급 ${grade.score}점</span>`
-     +`<span style="color:var(--tx3);font-size:11px">${grade.label} · 상한 ${grade.ceiling}</span>`
-     +`<span style="font-size:11px;color:${grade.tradable?'#0ecb81':'var(--tx3)'}">${grade.tradable?'★ 매매가능':'— 관망'}</span></div>`;
-  html+=`<div style="color:var(--tx3);margin-bottom:6px">· ${grade.why}<br>${conf.why.map(w=>'· '+w).join('<br>')}</div>`;
+  // v4 등급 배지 — 등급과 실측 기대값을 먼저 보여준다. 매매 가부는 이 값이 정한다.
+  if(gv4){
+    const gc = gv4.grade==='A' ? 'var(--g)' : gv4.grade==='B' ? '#0ecb81'
+             : gv4.grade==='C' ? 'var(--y)' : 'var(--r)';
+    html+=`<div style="margin-bottom:6px;padding:6px;border-radius:6px;background:rgba(255,255,255,.04);border:1px solid ${gc}40">`
+       +  `<b style="color:${gc}">${gv4.grade}등급 · 실측 기대값 ${gv4.ev>=0?'+':''}${gv4.ev.toFixed(2)}R</b>`
+       +  `<span style="color:var(--tx3);font-size:10px"> ${gv4.tradable?'★ 매매 가능':'— 관망'}</span>`
+       +  `<div style="color:var(--tx3);font-size:10px;margin-top:3px">${gv4.cell} · 손절폭 ATR ${gv4.slMult}배 · RSI보정 ${gv4.rsiAdj}</div>`
+       +  (gv4.notes.length?`<div style="color:var(--y);font-size:10px;margin-top:3px">${gv4.notes.map(n=>'⚠ '+n).join('<br>')}</div>`:'')
+       +  `</div>`;
+  }
+  html+=`<div style="color:var(--tx3);margin-bottom:6px">${conf.why.map(w=>'· '+w).join('<br>')}</div>`;
   if(r.type==='impulse'){
     const P=r.seg.map(p=>p.price);
     html+=`<div>1파: ${f(P[0])} → ${f(P[1])}</div>`;
@@ -1329,23 +1359,27 @@ function doWave(rows, symLabel, tfLabel){
     html+=`<div>C파 목표: <b style="color:var(--c)">${f(r.fib.c_100)}</b> (1:1) / ${f(r.fib.c_1618)} (1.618)</div>`;
   }
   html+=`<div style="margin-top:4px">⚠️ 무효화선: <b style="color:var(--r)">${f(r.invalid)}</b></div>`;
-  // 실전 가이드
-  let guide;
-  if(r.type==='impulse'){
-    if(r.n<=2) guide=r.bull?`2파 눌림 ${f(r.fib.w2_050)}~${f(r.fib.w2_618)} 분할 롱 / SL ${f(r.invalid)}`:`2파 반등 ${f(r.fib.w2_050)}~${f(r.fib.w2_618)} 분할 숏 / SL ${f(r.invalid)}`;
-    else if(r.n===3) guide=(r.bull?'롱':'숏')+` 보유 — TP1 ${f(r.fib.w3_1618)} / SL 2파 ${r.bull?'저점':'고점'} ${f(r.seg[2].price)}`;
-    else if(r.n===4) guide=`4파 되돌림 ${f(r.fib.w4_382)} 부근 ${r.bull?'롱':'숏'} 재진입 / SL ${f(r.invalid)}`;
-    else guide=`5파 구간 — 다이버전스 확인 후 익절/반대 관점 준비, 신규 진입 관망`;
-  } else guide=`C파 목표 ${f(r.fib.c_100)} 도달 시 반전 확인 후 진입 검토, 그 전 관망`;
-  // v2: A/B 등급만 매매안을 낸다. C/D는 신뢰도 미달이므로 관망으로 강등한다.
-  // (저신뢰 카운팅으로 진입시키지 않는 것이 v2의 존재 이유)
-  if(!grade.tradable){
-    guide=`관망 — ${grade.grade}등급(${grade.score}점) 신뢰도 미달. ${grade.label}. 진입 근거로 쓰지 말 것`;
+  // 실전 가이드.
+  // 등급이 매매선(0.5R) 미달이면 진입가·목표가를 적지 않는다. 적는 순간
+  // 근거 없는 신호가 되고, 백테스트에서 이 구간은 실제로 승률 14~23%였다.
+  let guide, guideCol='rgba(225,48,108,.08)', guideBorder='rgba(225,48,108,.25)';
+  if(gv4 && !gv4.tradable){
+    guide = `관망 — 실측 기대값 ${gv4.ev>=0?'+':''}${gv4.ev.toFixed(2)}R로 매매선(+${WAVE_TRADE_CUT}R) 미달. 진입 근거로 쓰지 말 것`;
+    guideCol='rgba(240,165,0,.08)'; guideBorder='rgba(240,165,0,.3)';
+  } else if(gv4 && gv4.tradable){
+    // 청산은 고정 목표가가 아니라 ATR 2배 트레일링. 백테스트에서 고정TP 대비
+    // 건당 +0.660R -> +0.843R로 개선된 방식이다.
+    guide = `${gv4.isLong?'롱':'숏'} 진입 ${f(gv4.entry)} / 최초손절 ${f(gv4.sl)}`
+          + `<div style="margin-top:3px;font-size:11px">청산: ATR 2배 트레일링 — 추적폭 ${f(gv4.trailDistance)}, ${f(gv4.breakeven)}에서 본전 확보</div>`
+          + `<div style="margin-top:2px;font-size:10px;color:var(--tx3)">피보나치 목표는 참고용이며 고정 청산 아님</div>`;
+    guideCol='rgba(14,203,129,.08)'; guideBorder='rgba(14,203,129,.3)';
+  } else {
+    // 등급 산출 불가(지표 부족) — 기존 안내를 유지하되 근거 없음을 밝힌다
+    guide = `등급 판정 보류 (ATR·MA·RSI 중 일부 미산출) — 매매 근거로 쓰지 말 것`;
+    guideCol='rgba(240,165,0,.08)'; guideBorder='rgba(240,165,0,.3)';
   }
-  const gBg = grade.tradable ? 'rgba(225,48,108,.08)' : 'rgba(255,255,255,.04)';
-  const gBd = grade.tradable ? 'rgba(225,48,108,.25)' : 'rgba(255,255,255,.12)';
-  html+=`<div style="margin-top:4px;padding:6px;border-radius:6px;background:${gBg};border:1px solid ${gBd}">${grade.tradable?'💡':'⏸️'} ${guide}</div>`;
-  html+=`<div style="margin-top:4px;color:var(--tx3);font-size:10px">기술적 분석 참고용 · 투자 권유 아님</div>`;
+  html+=`<div style="margin-top:4px;padding:6px;border-radius:6px;background:${guideCol};border:1px solid ${guideBorder}">💡 ${guide}</div>`;
+  html+=`<div style="margin-top:4px;color:var(--tx3);font-size:10px">v4 실측 기대값 기반 (15종·8,778건 백테스트, 아웃샘플 69.6~76.5%)<br>수수료·슬리피지 미반영 · 기술적 분석 참고용 · 투자 권유 아님</div>`;
   box.innerHTML=html;
 }
 
