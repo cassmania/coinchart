@@ -1234,6 +1234,10 @@ function waveGradeV4(r, conf, rows){
   const atr = calcATR(rows);
   const slDist = Math.abs(px - r.invalid);
   if(!(atr>0) || !(slDist>0)) return null;
+  // 무효화선이 진입가의 반대쪽에 있으면(상승 파동인데 손절이 위) 방향이 모순이다.
+  // 이 상태로 R을 계산하면 부호가 뒤집혀 손실이 이익으로 표시된다(실측 버그).
+  // 스킬 CLI는 analyze 단계에서 걸러내지만 앱 엔진은 그대로 내보내므로 여기서 막는다.
+  if(isLong ? (r.invalid >= px) : (r.invalid <= px)) return null;
   const slMult = slDist/atr;
   const aBand = slMult>=2 ? 'a2+' : slMult>=1 ? 'a1-2' : 'a<1';
 
@@ -1272,6 +1276,16 @@ function waveGradeV4(r, conf, rows){
     entry:px, sl:r.invalid,
     trailDistance: atr*WAVE_ATR_MULT,
     breakeven: isLong ? px+atr*WAVE_ATR_MULT : px-atr*WAVE_ATR_MULT,
+    // 매도 표: 가격이 각 R 지점에 닿았을 때 손절이 어디로 오는지 미리 계산한다.
+    // 트레일링은 "따라 올린다"는 말만으론 운용이 안 되고, 숫자로 봐야 쓸 수 있다.
+    // 손절은 유리한 방향으로만 움직이므로 최초 손절보다 불리해지지 않게 막는다.
+    ladder: [1,2,3,4].map(function(k){
+      const price = isLong ? px + slDist*k : px - slDist*k;
+      const raw   = isLong ? price - atr*WAVE_ATR_MULT : price + atr*WAVE_ATR_MULT;
+      const stop  = isLong ? Math.max(r.invalid, raw) : Math.min(r.invalid, raw);
+      const locked = (isLong ? stop - px : px - stop) / slDist;
+      return { atR:k, price:price, stop:stop, lockedR:+locked.toFixed(2) };
+    }),
     notes
   };
 }
@@ -1335,19 +1349,68 @@ function doWave(rows, symLabel, tfLabel){
     const names=['1파 초입','1파 진행','2파 조정','3파 진행','4파 조정','5파 진행/마무리'];
     phase=(r.bull?'상승':'하락')+' 임펄스 — '+names[Math.min(r.n,5)];
   } else phase=(r.bull?'반등':'하락')+' 조정 A-B-C — C파 관점';
-  let html=`<div style="margin-bottom:6px"><b style="color:${col}">📌 ${phase}</b></div>`;
-  // v4 등급 배지 — 등급과 실측 기대값을 먼저 보여준다. 매매 가부는 이 값이 정한다.
-  if(gv4){
-    const gc = gv4.grade==='A' ? 'var(--g)' : gv4.grade==='B' ? '#0ecb81'
-             : gv4.grade==='C' ? 'var(--y)' : 'var(--r)';
-    html+=`<div style="margin-bottom:6px;padding:6px;border-radius:6px;background:rgba(255,255,255,.04);border:1px solid ${gc}40">`
-       +  `<b style="color:${gc}">${gv4.grade}등급 · 실측 기대값 ${gv4.ev>=0?'+':''}${gv4.ev.toFixed(2)}R</b>`
-       +  `<span style="color:var(--tx3);font-size:10px"> ${gv4.tradable?'★ 매매 가능':'— 관망'}</span>`
-       +  `<div style="color:var(--tx3);font-size:10px;margin-top:3px">${gv4.cell} · 손절폭 ATR ${gv4.slMult}배 · RSI보정 ${gv4.rsiAdj}</div>`
-       +  (gv4.notes.length?`<div style="color:var(--y);font-size:10px;margin-top:3px">${gv4.notes.map(n=>'⚠ '+n).join('<br>')}</div>`:'')
-       +  `</div>`;
+  // 결론을 맨 위로. 등급·조합키·R 배수는 내부 언어라 앞에 두면
+  // 정작 "지금 뭘 하라는 건지"가 묻힌다.
+  let html='';
+
+  if(gv4 && gv4.tradable){
+    const buy = gv4.isLong;
+    const pctSl = ((gv4.sl - gv4.entry) / gv4.entry * 100).toFixed(1);
+    const actCol = buy ? 'var(--g)' : 'var(--r)';
+    html += `<div style="padding:8px;border-radius:6px;background:${buy?'rgba(14,203,129,.10)':'rgba(246,70,93,.10)'};border:1px solid ${actCol}55">`
+         +  `<div style="font-size:15px;font-weight:800;color:${actCol}">${buy?'매수':'매도(숏)'} ${f(gv4.entry)}</div>`
+         +  `<div style="margin-top:3px">손절 <b style="color:var(--r)">${f(gv4.sl)}</b>`
+         +  `<span style="color:var(--tx3)"> (${pctSl}%) — 여기 깨지면 무조건 정리</span></div>`;
+    if(gv4.ladder){
+      html += `<div style="margin-top:7px;font-size:11px;color:var(--tx3)">`
+           +  `${buy?'오르면':'내려가면'} 손절을 따라 ${buy?'올린다':'내린다'} (고정 목표가 없음)</div>`
+           +  `<table style="width:100%;margin-top:3px;font-size:11px;border-collapse:collapse">`;
+      for(const st of gv4.ladder){
+        // 추적폭이 1R보다 넓으면 1R 도달로도 아직 손실이다. 그걸 숨기면
+        // 1R에서 안심하게 되므로 상태를 그대로 적는다.
+        const good = st.lockedR > 0.05;
+        const even = !good && st.lockedR >= -0.05;
+        const stCol = good ? 'var(--g)' : even ? 'var(--y)' : 'var(--tx3)';
+        const label = good ? '이익 확정' : even ? '본전' : '아직 손실';
+        html += `<tr><td style="padding:1px 0">${f(st.price)} ${buy?'오면':'가면'}</td>`
+             +  `<td style="padding:1px 0">→ 손절 <b>${f(st.stop)}</b></td>`
+             +  `<td style="padding:1px 0;text-align:right;color:${stCol}">${label} ${st.lockedR>=0?'+':''}${st.lockedR}R</td></tr>`;
+      }
+      html += `</table>`;
+      const be = gv4.ladder.find(x=>x.lockedR>=0);
+      html += `<div style="margin-top:4px;font-size:11px;color:var(--y)">`
+           +  (be ? `${f(be.price)} ${buy?'넘기':'밑으로 가기'} 전까진 손실 구간이다.`
+                  : `추적폭이 넓어 표 구간에서는 아직 본전에 못 온다.`)
+           +  `</div>`;
+    }
+    html += `<div style="margin-top:5px;font-size:11px;color:var(--tx3)">`
+         +  `기대값 +${gv4.ev.toFixed(2)}R · ${gv4.grade}등급 (백테스트 실측)</div></div>`;
+  } else {
+    // 관망일 때는 진입가·목표가를 적지 않는다. 적는 순간 근거 없는 신호가 되고,
+    // 백테스트에서 이 구간 실측 승률은 14~23%였다.
+    const why = !gv4 ? '등급 판정 보류 (ATR·MA·RSI 중 일부 미산출)'
+      : `기대값 ${gv4.ev>=0?'+':''}${gv4.ev.toFixed(2)}R — 매매 기준선 +${WAVE_TRADE_CUT}R 미달`;
+    html += `<div style="padding:8px;border-radius:6px;background:rgba(240,165,0,.08);border:1px solid rgba(240,165,0,.35)">`
+         +  `<div style="font-size:15px;font-weight:800;color:var(--y)">관망</div>`
+         +  `<div style="margin-top:3px;font-size:11px">${why}</div>`;
+    if(gv4 && gv4.notes.length){
+      // 조합키 대신 사람 말로 이유를 적는다.
+      const plain = {
+        '손절폭 ATR 1배 미만 — 잡음 피격 위험':'손절 자리가 너무 가까워 잡음에 털린다',
+        'MA20/60 역행':'이동평균이 파동 방향과 반대다',
+        '확증 6점 미만':'보조지표 확증이 약하다',
+        'RSI 추세 약화 — 실측 승률 최하 구간':'RSI가 실측 승률 최하 구간이다',
+        '백테스트 표본 부족 조합 — 미검증':'백테스트에 없는 조합이라 검증되지 않았다'
+      };
+      html += `<div style="margin-top:4px;font-size:11px;color:var(--tx3)">`
+           +  gv4.notes.map(n=>'· '+(plain[n]||n)).join('<br>') + `</div>`;
+    }
+    html += `</div>`;
   }
-  html+=`<div style="color:var(--tx3);margin-bottom:6px">${conf.why.map(w=>'· '+w).join('<br>')}</div>`;
+
+  // --- 파동 상세 (근거) ---
+  html += `<div style="margin-top:8px"><b style="color:${col}">📐 ${phase}</b></div>`;
+  html += `<div style="color:var(--tx3);margin:3px 0 4px">${conf.why.map(w=>'· '+w).join('<br>')}</div>`;
   if(r.type==='impulse'){
     const P=r.seg.map(p=>p.price);
     html+=`<div>1파: ${f(P[0])} → ${f(P[1])}</div>`;
@@ -1358,27 +1421,11 @@ function doWave(rows, symLabel, tfLabel){
   } else {
     html+=`<div>C파 목표: <b style="color:var(--c)">${f(r.fib.c_100)}</b> (1:1) / ${f(r.fib.c_1618)} (1.618)</div>`;
   }
-  html+=`<div style="margin-top:4px">⚠️ 무효화선: <b style="color:var(--r)">${f(r.invalid)}</b></div>`;
-  // 실전 가이드.
-  // 등급이 매매선(0.5R) 미달이면 진입가·목표가를 적지 않는다. 적는 순간
-  // 근거 없는 신호가 되고, 백테스트에서 이 구간은 실제로 승률 14~23%였다.
-  let guide, guideCol='rgba(225,48,108,.08)', guideBorder='rgba(225,48,108,.25)';
-  if(gv4 && !gv4.tradable){
-    guide = `관망 — 실측 기대값 ${gv4.ev>=0?'+':''}${gv4.ev.toFixed(2)}R로 매매선(+${WAVE_TRADE_CUT}R) 미달. 진입 근거로 쓰지 말 것`;
-    guideCol='rgba(240,165,0,.08)'; guideBorder='rgba(240,165,0,.3)';
-  } else if(gv4 && gv4.tradable){
-    // 청산은 고정 목표가가 아니라 ATR 2배 트레일링. 백테스트에서 고정TP 대비
-    // 건당 +0.660R -> +0.843R로 개선된 방식이다.
-    guide = `${gv4.isLong?'롱':'숏'} 진입 ${f(gv4.entry)} / 최초손절 ${f(gv4.sl)}`
-          + `<div style="margin-top:3px;font-size:11px">청산: ATR 2배 트레일링 — 추적폭 ${f(gv4.trailDistance)}, ${f(gv4.breakeven)}에서 본전 확보</div>`
-          + `<div style="margin-top:2px;font-size:10px;color:var(--tx3)">피보나치 목표는 참고용이며 고정 청산 아님</div>`;
-    guideCol='rgba(14,203,129,.08)'; guideBorder='rgba(14,203,129,.3)';
-  } else {
-    // 등급 산출 불가(지표 부족) — 기존 안내를 유지하되 근거 없음을 밝힌다
-    guide = `등급 판정 보류 (ATR·MA·RSI 중 일부 미산출) — 매매 근거로 쓰지 말 것`;
-    guideCol='rgba(240,165,0,.08)'; guideBorder='rgba(240,165,0,.3)';
+  html+=`<div style="margin-top:3px">⚠️ 무효화선: <b style="color:var(--r)">${f(r.invalid)}</b></div>`;
+  if(gv4){
+    html+=`<div style="margin-top:5px;font-size:10px;color:var(--tx3)">`
+       +  `[진단] ${gv4.cell} · 손절폭 ATR ${gv4.slMult}배 · RSI보정 ${gv4.rsiAdj}</div>`;
   }
-  html+=`<div style="margin-top:4px;padding:6px;border-radius:6px;background:${guideCol};border:1px solid ${guideBorder}">💡 ${guide}</div>`;
   html+=`<div style="margin-top:4px;color:var(--tx3);font-size:10px">v4 실측 기대값 기반 (15종·8,778건 백테스트, 아웃샘플 69.6~76.5%)<br>수수료·슬리피지 미반영 · 기술적 분석 참고용 · 투자 권유 아님</div>`;
   box.innerHTML=html;
 }
