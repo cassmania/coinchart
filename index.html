@@ -179,6 +179,8 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
 .sr-price{font-size:11px;font-weight:600;}
 .sr-pct{font-size:9px;color:var(--y);margin-left:2px;font-weight:600;}
 .sr-badge{font-size:9px;padding:1px 4px;border-radius:3px;margin-left:3px;font-weight:700;}
+.sr-conf{font-size:8px;padding:0 3px;border-radius:2px;margin-left:4px;font-weight:700;background:rgba(243,186,47,.22);color:#f3ba2f;}
+.sr-conf.mid{background:rgba(120,140,170,.2);color:#8fa3bf;}
 .sr-badge.r1{background:rgba(246,70,93,.2);color:#f6465d;}
 .sr-badge.r2{background:rgba(255,138,61,.16);color:#ff8a3d;}
 .sr-badge.r3{background:rgba(255,200,87,.14);color:#ffc857;}
@@ -864,6 +866,11 @@ function doSR() {
     if (selectedPanelIdx === 1) document.getElementById('srList').innerHTML='<div style="color:var(--b);font-size:11px">매물대 계산 대기 중</div>';
     return;
   }
+  // Value Area / HVN — 매물대 경계가 POC 다음으로 강한 벽
+  const zones=calcVpvrZones(60);
+  // 마지노선: 전 구간 최저·최고. 이탈하면 지지·저항이 비어 다음 목표까지 공백
+  const allH=candles.map(c=>c.high), allL=candles.map(c=>c.low);
+  const periodHigh=Math.max(...allH), periodLow=Math.min(...allL);
 
   // 스윙 포인트 (3봉, 5봉)
   const sw3=detectSwings(3), sw5=detectSwings(5);
@@ -899,6 +906,14 @@ function doSR() {
   if(ma60v&&ma60v>last) add(ma60v,'MA60','res',3);
   if(ma120v&&ma120v>last)add(ma120v,'MA120','res',4);
   if(ma200v&&ma200v>last)add(ma200v,'MA200','res',5);
+  // VPVR 매물대 경계 — POC 다음으로 두꺼운 벽
+  if(zones){
+    if(zones.vah>last) add(zones.vah,'VA상단','res',5);
+    if(zones.val>last) add(zones.val,'VA하단','res',5);  // 이탈한 지지는 저항으로 전환
+    if(zones.poc>last) add(zones.poc,'POC','res',6);
+    zones.hvn.filter(p=>p>last).forEach(p=>add(p,'HVN 매물대','res',4));
+  }
+  if(periodHigh>last) add(periodHigh,'전 구간 최고','res',6);
 
   // 지지선 후보
   add(swL100,'연간 저점','sup',5);
@@ -913,6 +928,14 @@ function doSR() {
   if(ma60v&&ma60v<=last) add(ma60v,'MA60','sup',3);
   if(ma120v&&ma120v<=last)add(ma120v,'MA120','sup',4);
   if(ma200v&&ma200v<=last)add(ma200v,'MA200','sup',5);
+  // VPVR 매물대 경계
+  if(zones){
+    if(zones.val<=last) add(zones.val,'VA하단','sup',5);
+    if(zones.vah<=last) add(zones.vah,'VA상단','sup',5);  // 돌파한 저항은 지지로 전환
+    if(zones.poc<=last) add(zones.poc,'POC','sup',6);
+    zones.hvn.filter(p=>p<=last).forEach(p=>add(p,'HVN 매물대','sup',4));
+  }
+  if(periodLow<=last) add(periodLow,'마지노선(전 구간 최저)','sup',6);
 
   // ── 1차/2차/3차 분류 ─────────────────────────────────
   const above = rawLevels
@@ -927,7 +950,7 @@ function doSR() {
   const supRank=['1차 지지선','2차 지지선','3차 지지선'];
   const res3 = above.slice(0,3).map((l,i)=>({...l, rank:resRank[i], cls:'res'+(i+1)}));
   const sup3 = below.slice(0,3).map((l,i)=>({...l, rank:supRank[i], cls:'sup'+(i+1)}));
-  const pocItem = {price:poc.price, lbl:'VPVR POC', type:'poc', rank:'매물대', cls:'poc'};
+  const pocItem = {price:poc.price, lbl:'VPVR POC', type:'poc', rank:'매물대', cls:'poc', score:9};
 
   // ── 사이드바 렌더 ────────────────────────────────────
   const allItems=[...res3, pocItem, ...sup3];
@@ -941,9 +964,13 @@ function doSR() {
     const badge_cls = l.cls==='poc'?'poc':
                       l.cls==='res1'?'r1':l.cls==='res2'?'r2':l.cls==='res3'?'r3':
                       l.cls==='sup1'?'s1':l.cls==='sup2'?'s2':'s3';
+    // 겹침 강도: 여러 근거가 한 가격대에 몰릴수록 강한 벽
+    // 단일 근거로도 5~6점이 나오므로, 실제로 겹친 경우만 걸러지게 임계값을 높게 잡는다
+    const strong = (l.score||0)>=14 ? '<span class="sr-conf">강</span>'
+                 : (l.score||0)>=9  ? '<span class="sr-conf mid">중</span>' : '';
     return`<div class="sr-item ${l.cls}">
       <span class="sr-lbl ${l.cls}">
-        <span class="sr-badge ${badge_cls}">${l.rank}</span> ${l.lbl}
+        <span class="sr-badge ${badge_cls}">${l.rank}</span> ${l.lbl}${strong}
       </span>
       <span>
         <span class="sr-price">${l.price.toFixed(d2)}</span>
@@ -1016,6 +1043,32 @@ function calcVPVR(bins=40, rows=null){
   const arr=Array.from({length:bins},(_,i)=>({price:l+(i+.5)*rng/bins,vol:0}));
   rows.forEach(c=>{const tp=(c.high+c.low+c.close)/3,idx=Math.min(bins-1,Math.floor((tp-l)/rng*bins));arr[idx].vol+=c.volume;});
   return arr;
+}
+
+// VPVR 프로파일 → POC / Value Area(거래량 70%) / HVN 노드
+// 지지·저항의 1차 근거. 매물이 두꺼운 가격대일수록 벽이 강하다.
+function calcVpvrZones(bins=40, rows=null){
+  const vp=calcVPVR(bins, rows);
+  if(!vp.length) return null;
+  const total=vp.reduce((s,b)=>s+b.vol,0);
+  if(total<=0) return null;
+
+  const pocIdx=vp.reduce((bi,b,i)=>b.vol>vp[bi].vol?i:bi, 0);
+
+  // POC에서 양옆으로 넓혀가며 거래량 70% 채우기
+  let lo=pocIdx, hi=pocIdx, acc=vp[pocIdx].vol;
+  const target=total*0.7;
+  while(acc<target && (lo>0 || hi<vp.length-1)){
+    const dn=lo>0?vp[lo-1].vol:-1, up=hi<vp.length-1?vp[hi+1].vol:-1;
+    if(up>=dn){ hi++; acc+=vp[hi].vol; } else { lo--; acc+=vp[lo].vol; }
+  }
+
+  // HVN: 평균 거래량 1.5배 넘는 고밀도 노드 상위 3개
+  const avg=total/vp.length;
+  const hvn=vp.filter(b=>b.vol>avg*1.5).sort((a,b)=>b.vol-a.vol).slice(0,3)
+              .map(b=>b.price).sort((a,b)=>a-b);
+
+  return { poc:vp[pocIdx].price, val:vp[lo].price, vah:vp[hi].price, hvn };
 }
 
 function drawVPVR(){
