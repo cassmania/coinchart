@@ -825,7 +825,7 @@ function renderAll() {
   safeRun('사이드바', () => doSidebar(rows));
   safeRun('종합 신호', () => doSignal(rows));
   safeRun('VPVR', drawVPVR);
-  safeRun('엘리엇 파동', () => doWave(rows));
+  safeRun('엘리엇 파동', () => doWave(rows, sym, tf, true));
   if (selectedPanelIdx === 1) safeRun('현재가박스', refreshMainPriceBox);
 }
 
@@ -1447,20 +1447,51 @@ function waveGradeV4(r, conf, rows){
   };
 }
 
-function doWave(rows, symLabel, tfLabel){
-  const isMain = !rows || rows===candles;
-  rows = rows||candles;
-  // 차트 오버레이 정리 (메인 차트 분석일 때만 그림)
-  if(isMain){
-    waveFibLines.forEach(l=>{try{CS.removePriceLine(l);}catch(e){}}); waveFibLines=[];
-    if(waveLineS){ waveLineS.setData([]); try{waveLineS.setMarkers([]);}catch(e){} }
-  }
-  // 메인 차트발 호출인데 다른 분할 패널이 선택돼 있으면 사이드바는 그 패널 것 유지 (라이브 틱 덮어쓰기 방지)
-  const canWriteBox = !isMain || selectedPanelIdx === 1;
+function clearMainWaveOverlay(){
+  waveFibLines.forEach(l=>{try{CS.removePriceLine(l);}catch(e){}});
+  waveFibLines=[];
+  if(waveLineS){ waveLineS.setData([]); try{waveLineS.setMarkers([]);}catch(e){} }
+}
+
+function setWavePanelState(symbolArg, tfArg, message, state='대기', clearOverlay=false){
+  const symbol=normalizeSymbol(symbolArg||sym);
+  const timeframe=tfArg||tf;
+  if(clearOverlay) clearMainWaveOverlay();
   const box=document.getElementById('waveBox'), confEl=document.getElementById('waveConf');
-  if(!inds.WAVE||rows.length<40){ if(canWriteBox){ if(box)box.innerHTML='캔들 부족 또는 꺼짐'; if(confEl)confEl.textContent='--'; } return; }
+  if(box){
+    box.textContent=message;
+    box.dataset.symbol=symbol;
+    box.dataset.timeframe=timeframe;
+    box.dataset.state=state;
+  }
+  if(confEl) confEl.textContent=`${symbol.replace('USDT','')} · ${timeframe} · ${state}`;
+}
+
+function doWave(rows, symLabel=sym, tfLabel=tf, isMain=true){
+  const analysisSymbol=normalizeSymbol(symLabel||sym);
+  const analysisTf=tfLabel||tf;
+  rows=rows||(isMain?getSignalRows(candles,analysisTf):[]);
+
+  // 비동기 갱신이 늦게 끝나도 이전 종목 결과가 현재 종목 사이드바를 덮지 못하게 막습니다.
+  if(isMain && (analysisSymbol!==sym || analysisTf!==tf)) return;
+  if(!isMain){
+    const selected=splitCharts.find(x=>x.idx===selectedPanelIdx);
+    if(!selected || normalizeSymbol(selected.symbol)!==analysisSymbol || selected.tf!==analysisTf) return;
+  }
+  // 차트 오버레이 정리 (메인 차트 분석일 때만 그림)
+  if(isMain) clearMainWaveOverlay();
+  // 메인 차트발 호출인데 다른 분할 패널이 선택돼 있으면 사이드바는 그 패널 것 유지 (라이브 틱 덮어쓰기 방지)
+  const canWriteBox = isMain ? selectedPanelIdx===1 : selectedPanelIdx!==1;
+  const box=document.getElementById('waveBox'), confEl=document.getElementById('waveConf');
+  if(!inds.WAVE||rows.length<40){
+    if(canWriteBox) setWavePanelState(analysisSymbol,analysisTf,'캔들 부족 또는 파동 표시 꺼짐','데이터 부족',false);
+    return;
+  }
   const r=waveAnalyze(rows);
-  if(!r){ if(canWriteBox){ box.innerHTML='유효한 파동 구조 미검출 (횡보/데이터 부족)'; confEl.textContent='--'; } return; }
+  if(!r){
+    if(canWriteBox) setWavePanelState(analysisSymbol,analysisTf,'유효한 파동 구조 미검출 (횡보/데이터 부족)','미검출',false);
+    return;
+  }
   const conf=waveConfidence(r, rows), d2=isMain?dp():dpFor(rows.at(-1).close), f=v=>v!=null?v.toFixed(d2):'--';
   const t=rows.map(c=>c.time);
   // v2가 쓰던 상위 TF(MTF) 합의 조회는 제거했다. 백테스트 8,778건에서
@@ -1493,8 +1524,7 @@ function doWave(rows, symLabel, tfLabel){
 
   // 3) 사이드바 브리핑 (스킬 출력 양식 축약판)
   if(!canWriteBox) return;
-  const symTxt = symLabel ? symLabel.replace('USDT','') : (isMain ? sym.replace('USDT','') : '');
-  const analysisTf = tfLabel || tf;
+  const symTxt=analysisSymbol.replace('USDT','');
   const isVerifiedDailyTf = analysisTf === '1d';
   // v4 실측 등급. 입력(ATR/MA/RSI)이 하나라도 없으면 null이 오고, 그때는
   // 임의값으로 채우지 않고 등급 표시를 생략한다.
@@ -1503,8 +1533,8 @@ function doWave(rows, symLabel, tfLabel){
     ? (function(){ try{ return waveGradeV4(r, conf.score, rows); }catch(e){ return null; } })()
     : null;
   confEl.textContent = gv4
-    ? (symTxt?symTxt+' · ':'')+gv4.grade+'등급 '+(gv4.ev>=0?'+':'')+gv4.ev.toFixed(2)+'R'
-    : (symTxt?symTxt+' · ':'')+(isVerifiedDailyTf?'파동 기대값 재검증 필요':`${analysisTf} 기대값 미검증`);
+    ? `${symTxt} · ${analysisTf} · ${gv4.grade}등급 ${gv4.ev>=0?'+':''}${gv4.ev.toFixed(2)}R`
+    : `${symTxt} · ${analysisTf} · ${isVerifiedDailyTf?'파동 기대값 재검증 필요':'기대값 미검증'}`;
   const dirTxt=r.bull?'상승':'하락', col=r.bull?'var(--g)':'var(--r)';
   let phase;
   if(r.type==='impulse'){
@@ -1592,6 +1622,9 @@ function doWave(rows, symLabel, tfLabel){
   }
   html+=`<div style="margin-top:4px;color:var(--tx3);font-size:10px">파동 구조만 표시 · 기대값 재현 검증 전 매매 신호 비활성<br>기술적 분석 참고용 · 투자 권유 아님</div>`;
   box.innerHTML=html;
+  box.dataset.symbol=analysisSymbol;
+  box.dataset.timeframe=analysisTf;
+  box.dataset.state='완료';
 }
 
 function doSidebar(rows=getSignalRows()) {
@@ -1685,6 +1718,7 @@ function setTf(t,btn){
   if(!TF_BY[t]) return;
   tf=t; document.querySelectorAll('.tf').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
+  setWavePanelState(sym,tf,`${sym.replace('USDT','')} ${tf} 캔들 로딩 중`,'로딩',true);
   closeWS(true);
   loadCandles().then(ok=>{ if(ok) connectWS(); });
 }
@@ -1805,6 +1839,7 @@ async function loadCandles() {
     mainFetchedAt=null;
     try{CS.setData([]);}catch(err){}
     updateDataContext(sym,null,tf,Date.now(),'갱신 실패');
+    setWavePanelState(sym,tf,`${sym.replace('USDT','')} 캔들 로드 실패 · 엘리엇 분석 데이터 없음`,'데이터 없음',true);
     clearFuturesDisplay('갱신 실패');
     const mtf=document.getElementById('mtfSummary'); if(mtf) mtf.textContent='갱신 실패 · 이전 결과를 지웠습니다';
     ['lRSI','lMACD','lCCI','lStoch','vRSI','vMACD','vCCI','vStoch'].forEach(id=>{
@@ -1933,6 +1968,7 @@ function selectCoin(s) {
       const inp = panel?.querySelector('.split-head input');
       if (inp) inp.value = s.replace('USDT','/USDT');
       selectSplitPanel(item.idx);
+      setWavePanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} ${item.tf} 캔들 로딩 중`,'로딩',false);
       refreshOneSplitChart(item);
       showToast(`${item.idx}번 차트 → ${s.replace('USDT','/USDT')} 변경`);
       return;
@@ -1943,6 +1979,7 @@ function selectCoin(s) {
   const info = allCoins.find(c => c.symbol === s);
   activeExchange = info?.markets?.[0] || 'Bybit';
   document.getElementById('symDisplay').value = s.replace('USDT','/USDT');
+  setWavePanelState(s,tf,`${s.replace('USDT','')} ${tf} 캔들 로딩 중`,'로딩',true);
   closeWS(true);
   loadCandles().then(ok => { if (ok) { connectWS(); loadFutures(); } });
 }
@@ -2561,7 +2598,7 @@ function applySnapshotToSidebar(item) {
   safeRun('MACD(분할)', () => doMACD(12, 26, 9, rows));
   safeRun('CCI(분할)', () => doCCI(20, rows));
   safeRun('스토캐스틱(분할)', () => doStoch(14, 3, 3, rows));
-  safeRun('엘리엇 파동(분할)', () => doWave(rows, item.symbol, item.tf));
+  safeRun('엘리엇 파동(분할)', () => doWave(rows, item.symbol, item.tf, false));
   const lastRow = item.candles.at(-1) || rows.at(-1);
   const chgPct = ((lastRow.close - item.candles[0].open) / item.candles[0].open) * 100;
   renderPriceBox({ symbol: item.symbol, exchange: item.exchange, price: lastRow.close, chgPct, hi: null, lo: null, d2: snap.d2 });
@@ -2595,7 +2632,7 @@ function selectSplitPanel(idx) {
       const rows = getSignalRows(candles,tf);
       doSidebar(rows); doBB(20,2,rows); doVWAP(rows,tf); doST(10,3,rows); doRSI(14,rows); doMACD(12,26,9,rows); doCCI(20,rows); doStoch(14,3,3,rows); doSR(rows,tf); doSignal(rows);
       updateSignalBasis(rows,tf,activeExchange);
-      safeRun('엘리엇 파동', () => doWave(rows));
+      safeRun('엘리엇 파동', () => doWave(rows, sym, tf, true));
     }
     loadMultiTimeframeSummary(sym,activeExchange);
     loadFutures();
@@ -2682,6 +2719,7 @@ function changeSplitSymbol(idx, value) {
   splitSymbols[idx] = item.symbol;
   saveSplitSymbols();
   selectSplitPanel(idx);
+  setWavePanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} ${item.tf} 캔들 로딩 중`,'로딩',false);
   refreshOneSplitChart(item);
 }
 
@@ -2719,6 +2757,7 @@ async function refreshOneSplitChart(item) {
         const el=document.getElementById(id); if(el) el.textContent='로드실패';
       });
       updateDataContext(item.symbol,null,item.tf,Date.now(),'갱신 실패');
+      setWavePanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} 캔들 로드 실패 · 엘리엇 분석 데이터 없음`,'데이터 없음',false);
       clearFuturesDisplay('갱신 실패');
       const mtf=document.getElementById('mtfSummary');if(mtf)mtf.textContent='갱신 실패 · 이전 결과를 지웠습니다';
       showToast(`⚠️ ${item.symbol} 캔들 데이터를 불러오지 못했습니다 (4개 거래소 모두 실패).`);
@@ -2739,12 +2778,14 @@ function changeSplitTf(idx, value) {
   if (!TF_BY[value]) return;
   if (idx === 1) {
     tf = value;
+    setWavePanelState(sym,tf,`${sym.replace('USDT','')} ${tf} 캔들 로딩 중`,'로딩',true);
     closeWS(true);
     loadCandles().then(ok => { if (ok) { connectWS(); loadFutures(); } });
   } else {
     const item = splitCharts.find(x => x.idx === idx);
     if (!item) return;
     item.tf = value;
+    if(selectedPanelIdx===idx) setWavePanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} ${item.tf} 캔들 로딩 중`,'로딩',false);
     refreshOneSplitChart(item);
   }
 }
