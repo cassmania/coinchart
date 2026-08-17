@@ -2,9 +2,12 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><text y=%2252%22 font-size=%2252%22>📈</text></svg>">
 <title>제미나이 차트</title>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script src="./analysis-engine.js"></script>
+<script src="./v3-analysis.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{--bg:#0d0e14;--bg2:#12141c;--bg3:#1a1d28;--bd:#252840;--tx:#e2e4f0;--tx2:#7a7e9a;--tx3:#363a58;--tx-strong:#ffffff;--g:#0ecb81;--r:#f6465d;--b:#4e7ff7;--y:#f0a500;--p:#a259ff;--c:#00d4ff;}
@@ -194,6 +197,18 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
 .sig.long{background:rgba(14,203,129,.18);color:var(--g);}
 .sig.short{background:rgba(246,70,93,.18);color:var(--r);}
 .sig.neutral{background:rgba(240,165,0,.18);color:var(--y);}
+.v31-copy{background:rgba(78,127,247,.14);border:1px solid rgba(78,127,247,.35);border-radius:4px;color:var(--b);font-size:9px;font-weight:800;padding:3px 6px;cursor:pointer;}
+.v31-copy:hover{background:var(--b);color:#fff;}
+.v31-meta{font-size:9px;line-height:1.5;color:var(--tx3);margin-bottom:7px;word-break:break-word;}
+.v31-part{background:var(--bg3);border:1px solid var(--bd);border-radius:6px;padding:7px 8px;margin-bottom:6px;}
+.v31-part:last-child{margin-bottom:0;}
+.v31-part-title{font-size:10px;font-weight:800;color:var(--c);margin-bottom:4px;}
+.v31-line{font-size:10px;line-height:1.55;color:var(--tx2);word-break:break-word;}
+.v31-line b{color:var(--tx-strong);}
+.v31-long{border-left:3px solid var(--g);}
+.v31-short{border-left:3px solid var(--r);}
+.v31-wait{border-left:3px solid var(--y);}
+.v31-missing{color:var(--b);}
 .strategy-card{display:flex;flex-direction:column;gap:7px;background:linear-gradient(180deg,rgba(78,127,247,.12),rgba(26,29,40,.96));border:1px solid rgba(78,127,247,.28);border-radius:8px;padding:9px;}
 .strategy-head{display:flex;align-items:center;justify-content:space-between;gap:8px;}
 .strategy-score{font-size:22px;font-weight:800;line-height:1;color:var(--tx);}
@@ -368,7 +383,16 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
   </div>
   <div class="sb-sec">
     <div class="sb-ttl">다중 시간봉 방향</div>
-    <div id="mtfSummary" style="font-size:11px;line-height:1.55;color:var(--tx2)">1H·4H·12H·주봉·월봉 로딩 중</div>
+    <div id="mtfSummary" style="font-size:11px;line-height:1.55;color:var(--tx2)">1H·4H·12H·일봉·주봉·월봉 로딩 중</div>
+  </div>
+  <div class="sb-sec">
+    <div class="sb-ttl-row">
+      <div class="sb-ttl" style="margin-bottom:0">AI MASTER 분석 V3.1</div>
+      <button class="v31-copy" id="v31Copy" onclick="copyV31Briefing()" disabled>브리핑 복사</button>
+    </div>
+    <div id="v31Box" data-symbol="" data-timeframe="" data-state="대기">
+      <div class="v31-meta">선택 종목의 확정봉과 검증된 원자료를 불러오는 중입니다.</div>
+    </div>
   </div>
   <div class="sb-sec">
     <div class="sb-ttl-row"><div class="sb-ttl" style="margin-bottom:0">📐 엘리엇 파동 분석</div><span class="sb-sel-sym" id="waveConf">--</span></div>
@@ -445,6 +469,9 @@ let favs = loadFavs();
 let frVal = 0;
 let inds = {MA20:1,MA60:1,MA120:1,MA200:1,BB:1,VWAP:1,ST:1,FIB:1,VPVR:1,WAVE:1};
 let loadSeq = 0, futuresSeq = 0, mtfSeq = 0, wsReconnectTimer = null, wsManualClose = false, renderTimer = null;
+let v31State = null;
+let v31FuturesCache = new Map();
+let usdtKrwCache = null;
 let vpvrRenderTimer = null;
 let vpvrMode = 'visible';
 try { if(localStorage.getItem('vpvrMode')==='fixed') vpvrMode='fixed'; } catch(e) {}
@@ -816,7 +843,7 @@ function renderAll() {
   safeRun('볼린저밴드', () => doBB(20, 2, rows));
   safeRun('VWAP', () => doVWAP(rows, tf));
   safeRun('슈퍼트렌드', () => doST(10, 3, rows));
-  safeRun('피보나치', doFib);
+  safeRun('피보나치', () => doFib(rows));
   safeRun('RSI', () => doRSI(14, rows));
   safeRun('MACD', () => doMACD(12, 26, 9, rows));
   safeRun('CCI', () => doCCI(20, rows));
@@ -876,13 +903,23 @@ function doST(per=10,mult=3,rows=getSignalRows()) {
     document.getElementById('iST').textContent=dir; document.getElementById('iST').style.color=col;
   }
 }
-function doFib() {
+function doFib(rows=getSignalRows()) {
   fibLines.forEach(l=>{try{CS.removePriceLine(l);}catch(e){}});fibLines=[];
-  if(!inds.FIB||candles.length<20)return;
-  const rec=candles.slice(-100), h=Math.max(...rec.map(c=>c.high)), l=Math.min(...rec.map(c=>c.low)), diff=h-l;
-  [[0,'고점'],[0.236,'23.6%'],[0.382,'38.2%'],[0.5,'50%'],[0.618,'61.8%'],[0.786,'78.6%'],[1,'저점']].forEach(([r,lb])=>
-    fibLines.push(CS.createPriceLine({price:h-diff*r,color:'rgba(240,165,0,.45)',lineWidth:1,lineStyle:2,axisLabelVisible:true,title:'Fib '+lb}))
-  );
+  if(!inds.FIB||rows.length<20||!window.CoinV31)return;
+  const pivots=CoinV31.confirmedPivots(rows,5);
+  const fib=CoinV31.fibonacci(pivots);
+  if(!fib)return;
+  const levels=[
+    [fib.from.price,'스윙 시작'],
+    [fib.levels['0.382'],'38.2%'],
+    [fib.levels['0.5'],'50%'],
+    [fib.levels['0.618'],'61.8%'],
+    [fib.levels['0.786'],'78.6%'],
+    [fib.to.price,'스윙 끝']
+  ];
+  levels.forEach(([price,label])=>{
+    if(Number.isFinite(price)) fibLines.push(CS.createPriceLine({price,color:'rgba(240,165,0,.45)',lineWidth:1,lineStyle:2,axisLabelVisible:true,title:`Fib ${label}`}));
+  });
 }
 function doRSI(p=14, rows=getSignalRows()) {
   const c=rows.map(x=>x.close), t=rows.map(x=>x.time);
@@ -1840,6 +1877,7 @@ async function loadCandles() {
     try{CS.setData([]);}catch(err){}
     updateDataContext(sym,null,tf,Date.now(),'갱신 실패');
     setWavePanelState(sym,tf,`${sym.replace('USDT','')} 캔들 로드 실패 · 엘리엇 분석 데이터 없음`,'데이터 없음',true);
+    setV31PanelState(sym,tf,`${sym.replace('USDT','')} 캔들 로드 실패 · V3.1 분석 데이터 없음`,'데이터 없음');
     clearFuturesDisplay('갱신 실패');
     const mtf=document.getElementById('mtfSummary'); if(mtf) mtf.textContent='갱신 실패 · 이전 결과를 지웠습니다';
     ['lRSI','lMACD','lCCI','lStoch','vRSI','vMACD','vCCI','vStoch'].forEach(id=>{
@@ -1860,16 +1898,18 @@ async function loadFutures() {
   const data=await fetchFuturesRaw(requestSymbol,requestExchange);
   if(seq!==futuresSeq || requestSymbol!==sym || requestExchange!==activeExchange) return;
   renderMainFutures(data,dp());
+  cacheV31Futures(data,requestSymbol,requestExchange);
 }
 
 async function loadCoinList() {
   const list = document.getElementById('coinList');
-  list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--tx3)">Bybit/Binance/MEXC 코인 목록 로딩 중...</div>';
+  list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--tx3)">Bybit/Binance 코인 목록 로딩 중...</div>';
   const map = new Map();
-  const [by, bn, mx] = await Promise.allSettled([
+  // MEXC 전체 티커는 정적 웹 출처의 CORS를 차단하므로 반복 오류를 만들지 않습니다.
+  // 종목 목록은 브라우저 공개 호출이 안정적인 Bybit와 Binance 원자료로 구성합니다.
+  const [by, bn] = await Promise.allSettled([
     fetchJson(`${BY}/market/tickers?category=linear`),
-    fetchJson(`${BNF}/ticker/24hr`),
-    fetchJson(`${MXC}/contract/ticker`)
+    fetchJson(`${BNF}/ticker/24hr`)
   ]);
   if (by.value?.result?.list) {
     by.value.result.list.filter(t => t.symbol.endsWith('USDT')).forEach(t => mergeCoin(map, {
@@ -1881,22 +1921,6 @@ async function loadCoinList() {
       symbol:t.symbol, price:+t.lastPrice || 0, chg:+t.priceChangePercent || 0, vol:+t.quoteVolume || 0, markets:['Binance']
     }));
   }
-  const mxData = Array.isArray(mx.value?.data) ? mx.value.data : [];
-  mxData.forEach(t => {
-    const raw = t.symbol || t.contract || '';
-    const symbol = normalizeSymbol(raw);
-    if (!symbol.endsWith('USDT')) return;
-    const price = +(t.lastPrice ?? t.last ?? t.fairPrice ?? 0);
-    const chg = +(t.riseFallRate ?? t.changeRate ?? 0);
-    mergeCoin(map, {
-      symbol, price, chg:Math.abs(chg) < 1 ? chg * 100 : chg, vol:+(t.amount24 ?? t.volume24 ?? t.volume ?? 0), markets:['MEXC']
-    });
-  });
-  map.forEach(c => {
-    if (c.markets.includes('MEXC') && c.markets[0] !== 'MEXC') {
-      c.markets = ['MEXC', ...c.markets.filter(m => m !== 'MEXC')];
-    }
-  });
   allCoins = [...map.values()].sort((a,b) => (b.vol || 0) - (a.vol || 0));
   filteredCoins = [...allCoins];
   renderCoinList();
@@ -1969,6 +1993,7 @@ function selectCoin(s) {
       if (inp) inp.value = s.replace('USDT','/USDT');
       selectSplitPanel(item.idx);
       setWavePanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} ${item.tf} 캔들 로딩 중`,'로딩',false);
+      setV31PanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} ${item.tf} 분석 데이터 로딩 중`,'로딩');
       refreshOneSplitChart(item);
       showToast(`${item.idx}번 차트 → ${s.replace('USDT','/USDT')} 변경`);
       return;
@@ -1980,6 +2005,7 @@ function selectCoin(s) {
   activeExchange = info?.markets?.[0] || 'Bybit';
   document.getElementById('symDisplay').value = s.replace('USDT','/USDT');
   setWavePanelState(s,tf,`${s.replace('USDT','')} ${tf} 캔들 로딩 중`,'로딩',true);
+  setV31PanelState(s,tf,`${s.replace('USDT','')} ${tf} 분석 데이터 로딩 중`,'로딩');
   closeWS(true);
   loadCandles().then(ok => { if (ok) { connectWS(); loadFutures(); } });
 }
@@ -2289,14 +2315,280 @@ function calcSnapshot(rows, tfArg=tf) {
   };
 }
 
-const MTF_TFS = ['1h','4h','12h','1w','1M'];
-const MTF_LABELS = {'1h':'1H','4h':'4H','12h':'12H','1w':'주봉','1M':'월봉'};
+function setV31PanelState(symbol, tfArg, message, state='대기') {
+  const box=document.getElementById('v31Box');
+  const button=document.getElementById('v31Copy');
+  if(!box) return;
+  box.dataset.symbol=normalizeSymbol(symbol||'');
+  box.dataset.timeframe=tfArg||'';
+  box.dataset.state=state;
+  box.innerHTML=`<div class="v31-meta">${esc(message)}</div>`;
+  if(button) button.disabled=true;
+  v31State=null;
+}
+
+async function fetchUsdtKrw() {
+  const now=Date.now();
+  if(usdtKrwCache && now-usdtKrwCache.fetchedAt<5*60*1000) return usdtKrwCache;
+  try{
+    const data=await fetchJson('https://api.upbit.com/v1/ticker?markets=KRW-USDT');
+    const ticker=Array.isArray(data)?data[0]:null;
+    const rate=Number(ticker?.trade_price);
+    if(!(rate>0)) throw new Error('KRW-USDT 환율 데이터 없음');
+    usdtKrwCache={rate,source:'Upbit KRW-USDT',sourceAt:Number(ticker.timestamp)||now,fetchedAt:now};
+    return usdtKrwCache;
+  }catch(error){
+    console.warn('USDT/KRW 환산 실패:',error.message);
+    return null;
+  }
+}
+
+function v31Price(price, fx, digits=null) {
+  if(!Number.isFinite(price)) return '계산 불가';
+  const d2=digits==null?dpFor(price):digits;
+  const usdt=`${price.toFixed(d2)} USDT`;
+  return fx?.rate>0 ? `${usdt} (${Math.round(price*fx.rate).toLocaleString('ko-KR')} KRW)` : `${usdt} (KRW 환산 확인 불가)`;
+}
+
+function v31Time(seconds) {
+  if(!Number.isFinite(seconds)) return '시각 없음';
+  return new Date(seconds*1000).toLocaleString('ko-KR',{
+    timeZone:'Asia/Seoul',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false
+  })+' KST';
+}
+
+function v31Zone(price, rows, fx) {
+  if(!Number.isFinite(price)) return '계산 불가';
+  const atrValue=calcATR(rows,14);
+  const width=Number.isFinite(atrValue)&&atrValue>0
+    ? Math.min(price*0.005,Math.max(price*0.001,atrValue*0.15))
+    : price*0.002;
+  return `${v31Price(price-width,fx)} ~ ${v31Price(price+width,fx)}`;
+}
+
+function latestValid(items, predicate=()=>true) {
+  return (Array.isArray(items)?items:[]).slice().reverse().find(predicate)||null;
+}
+
+function currentV31Context() {
+  if(selectedPanelIdx===1) return {symbol:sym,exchange:activeExchange,tf};
+  const item=splitCharts.find(chart=>chart.idx===selectedPanelIdx);
+  return item?{symbol:item.symbol,exchange:item.exchange,tf:item.tf}:null;
+}
+
+function currentV31Price(symbol) {
+  if(selectedPanelIdx===1 && sym===symbol) return candles.at(-1)?.close??null;
+  const item=splitCharts.find(chart=>chart.idx===selectedPanelIdx&&chart.symbol===symbol);
+  return item?.candles?.at(-1)?.close??null;
+}
+
+function v31ContextKey(symbol, exchange) {
+  return `${normalizeSymbol(symbol||'')}|${exchange||''}`;
+}
+
+function cacheV31Futures(data, symbol, exchange) {
+  if(!data || !symbol || !exchange) return;
+  v31FuturesCache.set(v31ContextKey(symbol,exchange),data);
+  updateV31Futures(data,symbol,exchange);
+}
+
+function updateV31Futures(data, symbol, exchange) {
+  if(!v31State || v31State.symbol!==symbol || v31State.exchange!==exchange) return;
+  v31State.futures=data;
+  renderV31Analysis(v31State.symbol,v31State.exchange,v31State.entries,v31State.fx,data);
+}
+
+function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
+  const context=currentV31Context();
+  if(!context || context.symbol!==symbol || context.exchange!==exchange) return;
+  const box=document.getElementById('v31Box');
+  const button=document.getElementById('v31Copy');
+  if(!box || !window.CoinV31) return;
+
+  const timeframes={};
+  entries.forEach(entry=>{ if(entry.rows?.length) timeframes[entry.timeframe]=entry.rows; });
+  const analysis=CoinV31.analyze(timeframes,CoinAnalysis);
+  const primaryTf=analysis.primaryTimeframe;
+  const primaryEntry=entries.find(entry=>entry.timeframe===primaryTf);
+  const rows=primaryEntry?.rows||[];
+  if(analysis.error || !rows.length){
+    setV31PanelState(symbol,context.tf,analysis.error||'구조 분석 데이터 없음','데이터 없음');
+    return;
+  }
+
+  const frame=analysis.frames[primaryTf];
+  const last=rows.at(-1);
+  const currentPrice=Number.isFinite(futuresData?.price)?futuresData.price:currentV31Price(symbol);
+  const levels=calcSplitLevels(rows,primaryTf).levels;
+  const resistances=levels.filter(level=>level.title.includes('저항')).sort((a,b)=>a.price-b.price);
+  const supports=levels.filter(level=>level.title.includes('지지')).sort((a,b)=>b.price-a.price);
+  const resistance=resistances[0]||null;
+  const resistance2=resistances[1]||null;
+  const support=supports[0]||null;
+  const support2=supports[1]||null;
+  const fvg=latestValid(analysis.fvg,gap=>gap.status!=='완전 메움');
+  const orderBlock=latestValid(analysis.orderBlocks,block=>block.status==='유효');
+  const structureBreak=latestValid(analysis.breaks);
+  const sweep=latestValid(analysis.sweeps);
+  const divergence=latestValid(analysis.divergences);
+  const fib=analysis.fibonacci;
+  const maValues=[frame.ma20,frame.ma50,frame.ma200];
+  const maText=maValues.every(Number.isFinite)
+    ? (frame.ma20>frame.ma50&&frame.ma50>frame.ma200?'정배열':frame.ma20<frame.ma50&&frame.ma50<frame.ma200?'역배열':'혼조')
+    : 'MA200 표본 부족';
+  const stText=frame.supertrendDirection===1?'상승':frame.supertrendDirection===-1?'하락':'표본 부족';
+  const closeTime=CoinAnalysis.candleCloseTimeSeconds(last,primaryTf);
+  const adxText=Number.isFinite(frame.adx.adx)
+    ? `ADX ${frame.adx.adx.toFixed(1)} · +DI ${frame.adx.plusDi.toFixed(1)} / -DI ${frame.adx.minusDi.toFixed(1)} · ${frame.regime}`
+    : 'ADX 표본 부족';
+  const breakText=structureBreak
+    ? `${structureBreak.kind} ${structureBreak.direction==='bullish'?'상방':'하방'} · ${v31Price(structureBreak.pivotPrice,fx)}`
+    : '확인된 BOS/CHoCH 없음';
+  const sweepText=sweep
+    ? `${sweep.type==='buy-side'?'상단':'하단'} 유동성 스윕 · ${v31Price(sweep.pivotPrice,fx)}`
+    : '확인된 유동성 스윕 없음';
+  const fvgText=fvg
+    ? `${fvg.type==='bullish'?'상승':'하락'} ${v31Price(fvg.lower,fx)} ~ ${v31Price(fvg.upper,fx)} · ${fvg.status} · 재방문 ${fvg.revisits}회`
+    : '유효 미체결 FVG 없음';
+  const obText=orderBlock
+    ? `${orderBlock.type==='bullish'?'상승':'하락'} ${orderBlock.quality} · ${v31Price(orderBlock.lower,fx)} ~ ${v31Price(orderBlock.upper,fx)} · 재방문 ${orderBlock.revisits}회`
+    : '유효 오더블록 없음';
+  const fibText=fib
+    ? `${fib.direction} · 0.382 ${v31Price(fib.levels['0.382'],fx)} / 0.618 ${v31Price(fib.levels['0.618'],fx)} / 0.786 ${v31Price(fib.levels['0.786'],fx)}`
+    : '확인 스윙 한 쌍 부족';
+  const divergenceText=divergence
+    ? `${divergence.label} · ${v31Price(divergence.first.price,fx)}(RSI ${divergence.first.rsi.toFixed(1)}) → ${v31Price(divergence.second.price,fx)}(RSI ${divergence.second.rsi.toFixed(1)})`
+    : '최근 확인 피벗 다이버전스 없음';
+  const momentumText=Number.isFinite(frame.rsi)&&Number.isFinite(frame.macdHistogram)
+    ? `RSI ${frame.rsi.toFixed(1)} · MACD 히스토그램 ${frame.macdHistogram>=0?'+':''}${frame.macdHistogram.toFixed(dpFor(Math.abs(frame.macdHistogram)||1))} · 거래량 ${Number.isFinite(frame.volumeRatio)?`20봉 평균의 ${frame.volumeRatio.toFixed(2)}배`:'비교 불가'}`
+    : '모멘텀 표본 부족';
+  const vpvr=levels.find(level=>level.title==='매물대 POC');
+  const vpvrText=vpvr
+    ? `${v31Price(vpvr.price,fx)} · ${primaryTf} 최근 ${Math.min(rows.length,180)}개 확정봉 OHLCV 분배 근사`
+    : '현재 실시간 데이터 확인 불가';
+
+  const fundingText=Number.isFinite(futuresData?.fr)
+    ? `${futuresData.exchange} ${futuresData.marketType} · ${(futuresData.fr*100).toFixed(4)}% · ${kstTime(futuresData.fetchedAt)} KST`
+    : '현재 실시간 데이터 확인 불가';
+  const oiText=Number.isFinite(futuresData?.oiNotional)||Number.isFinite(futuresData?.oiRaw)
+    ? `${futuresOiText(futuresData)}${Number.isFinite(futuresData.oiChangePct)?` · 1H ${futuresData.oiChangePct>=0?'+':''}${futuresData.oiChangePct.toFixed(2)}%`:''}`
+    : '현재 실시간 데이터 확인 불가';
+  const hourRows=entries.find(entry=>entry.timeframe==='1h')?.rows||[];
+  const hourPriceChange=hourRows.length>=2
+    ? (hourRows.at(-1).close-hourRows.at(-2).close)/hourRows.at(-2).close*100
+    : null;
+  let derivativesInterpretation='가격·OI 동시 변화 원자료 부족';
+  if(Number.isFinite(hourPriceChange)&&Number.isFinite(futuresData?.oiChangePct)){
+    if(hourPriceChange>=0&&futuresData.oiChangePct>=0) derivativesInterpretation='가격 상승+OI 상승 · 신규 포지션 유입 가능성(방향 확정 아님)';
+    else if(hourPriceChange>=0) derivativesInterpretation='가격 상승+OI 하락 · 숏 청산 또는 포지션 축소 가능성';
+    else if(futuresData.oiChangePct>=0) derivativesInterpretation='가격 하락+OI 상승 · 신규 숏 또는 헤지 유입 가능성';
+    else derivativesInterpretation='가격 하락+OI 하락 · 롱 청산 또는 위험 축소 가능성';
+  }
+  const fxText=fx?.rate>0
+    ? `${fx.source} · 1 USDT=${fx.rate.toLocaleString('ko-KR')} KRW · ${kstTime(fx.sourceAt)} KST`
+    : 'KRW 환산 확인 불가';
+  const resistanceText=resistance?v31Price(resistance.price,fx):'계산 가능한 상단 구조 없음';
+  const supportText=support?v31Price(support.price,fx):'계산 가능한 하단 구조 없음';
+
+  const longReady=resistance&&support;
+  const shortReady=support&&resistance;
+  const longText=longReady
+    ? `발동: ${v31Price(resistance.price,fx)} 위 확정봉 종가 돌파 후 재테스트 유지 · 진입관찰: ${v31Zone(resistance.price,rows,fx)} · 무효화: ${v31Price(support.price,fx)} 아래 확정봉 종가 · 목표: ${resistance2?v31Price(resistance2.price,fx):'상위 구조 데이터 부족'} · 수수료/슬리피지 미반영`
+    : '구조 레벨이 부족해 정밀 진입가를 제시하지 않음';
+  const shortText=shortReady
+    ? `발동: ${v31Price(support.price,fx)} 아래 확정봉 종가 이탈 후 되돌림 실패 · 진입관찰: ${v31Zone(support.price,rows,fx)} · 무효화: ${v31Price(resistance.price,fx)} 위 확정봉 종가 · 목표: ${support2?v31Price(support2.price,fx):'하위 구조 데이터 부족'} · 수수료/슬리피지 미반영`
+    : '구조 레벨이 부족해 관망';
+  const bias=frame.adx.adx>=25
+    ? (frame.adx.plusDi>=frame.adx.minusDi?'조건부 롱 우위':'조건부 숏 우위')
+    : '관망 우선';
+
+  box.dataset.symbol=symbol;
+  box.dataset.timeframe=primaryTf;
+  box.dataset.state='정상';
+  box.innerHTML=`
+    <div class="v31-meta">${esc(symbol.replace('USDT','/USDT'))} · ${esc(exchange)} USDT 무기한 · 현재가 ${esc(v31Price(currentPrice,fx))} · 기준 ${kstTime(Date.now())} KST<br>마지막 확정봉 ${v31Time(closeTime)} · ${esc(fxText)} · 근거 품질 A(공식 거래소 OHLCV+재현 계산)</div>
+    <div class="v31-part"><div class="v31-part-title">PART 1 · 추세 및 유동성</div>
+      <div class="v31-line"><b>${esc(primaryTf.toUpperCase())}</b> ${esc(adxText)}<br>MA20/50/200 ${esc(maText)} · SuperTrend ${esc(stText)}<br>${esc(breakText)} · ${esc(sweepText)}<br><b>저항</b> ${esc(resistanceText)}<br><b>지지</b> ${esc(supportText)}<br>FVG ${esc(fvgText)}<br>오더블록 ${esc(obText)}<br>VPVR POC ${esc(vpvrText)}</div>
+    </div>
+    <div class="v31-part"><div class="v31-part-title">PART 2 · 모멘텀 및 파동</div>
+      <div class="v31-line">${esc(momentumText)}<br>RSI 다이버전스 ${esc(divergenceText)}<br>피보나치 ${esc(fibText)}<br>엘리엇은 아래 종목별 주·대안 카운트와 무효화 기준 참조</div>
+    </div>
+    <div class="v31-part"><div class="v31-part-title">PART 3 · 파생상품 심리</div>
+      <div class="v31-line">펀딩비 ${esc(fundingText)}<br>OI ${esc(oiText)}<br>${esc(derivativesInterpretation)}<br><span class="v31-missing">CVD/청산맵: 현재 실시간 데이터 확인 불가</span></div>
+    </div>
+    <div class="v31-part"><div class="v31-part-title">PART 4 · 펀더멘털</div>
+      <div class="v31-line v31-missing">토큰 언락·고래 이동·프로젝트 이벤트: 현재 실시간 데이터 확인 불가 · 아래 원본 링크에서 별도 확인 필요</div>
+    </div>
+    <div class="v31-part ${longReady?'v31-long':'v31-wait'}"><div class="v31-part-title">PART 5 · 롱 셋업</div><div class="v31-line">${esc(longText)}</div></div>
+    <div class="v31-part ${shortReady?'v31-short':'v31-wait'}"><div class="v31-part-title">숏 셋업 또는 관망</div><div class="v31-line">${esc(shortText)}</div></div>
+    <div class="v31-part v31-wait"><div class="v31-part-title">최종 판단 · ${esc(bias)}</div><div class="v31-line">확정봉 조건이 나오기 전 선진입은 보류. 이 표시는 투자 조언이나 수익 보장이 아닙니다.<br>멘탈케어: 시장은 급해도 확정봉은 뛰지 않습니다. 조건이 올 때만 움직이세요.</div></div>`;
+
+  const briefing=[
+    `AI MASTER CRYPTO TRADING ANALYST V3.1`,
+    `■ 분석 기준`,
+    `- 종목/시장: ${symbol.replace('USDT','/USDT')} · ${exchange} USDT 무기한`,
+    `- 현재가: ${v31Price(currentPrice,fx)}`,
+    `- 기준 시각: ${kstTime(Date.now())} KST`,
+    `- 마지막 확정봉: ${v31Time(closeTime)}`,
+    `- OHLCV 출처: ${exchange} 공식 공개 API`,
+    `- 환율: ${fxText}`,
+    `■ 현재 시장 요약`,
+    `- ${primaryTf.toUpperCase()}: ${adxText}`,
+    `- MA20/50/200 ${maText} · SuperTrend ${stText}`,
+    `- 구조: ${breakText} · ${sweepText}`,
+    `■ 핵심 유동성 구간`,
+    `- 강한 저항대: ${resistanceText}`,
+    `- 핵심 지지대: ${supportText}`,
+    `- FVG: ${fvgText}`,
+    `- 오더블록: ${obText}`,
+    `- VPVR POC: ${vpvrText}`,
+    `■ 모멘텀 및 파동 구조`,
+    `- RSI/MACD/거래량: ${momentumText}`,
+    `- RSI 다이버전스: ${divergenceText}`,
+    `- 피보나치: ${fibText}`,
+    `- 엘리엇: 사이트 아래 종목별 주·대안 카운트와 무효화 기준 참조`,
+    `■ 파생상품 심리`,
+    `- 펀딩비: ${fundingText}`,
+    `- OI: ${oiText}`,
+    `- 가격/OI 해석: ${derivativesInterpretation}`,
+    `- CVD/청산맵: 현재 실시간 데이터 확인 불가`,
+    `■ 펀더멘털`,
+    `- 언락·고래·이벤트: 현재 실시간 데이터 확인 불가`,
+    `■ 시나리오별 매매 전략`,
+    `- 롱: ${longText}`,
+    `- 숏/관망: ${shortText}`,
+    `■ 최종 판단`,
+    `- 우세 시나리오: ${bias}`,
+    `- 미확인: CVD·청산맵·온체인·언락·고래 이동`,
+    `- 멘탈케어: 시장은 급해도 확정봉은 뛰지 않습니다. 조건이 올 때만 움직이세요.`,
+    `※ 투자 조언이나 수익 보장이 아닙니다.`
+  ].join('\n');
+  v31State={symbol,exchange,entries,fx,futures:futuresData,analysis,briefing};
+  if(button) button.disabled=false;
+}
+
+async function copyV31Briefing() {
+  if(!v31State?.briefing) return;
+  try{
+    await navigator.clipboard.writeText(v31State.briefing);
+    showToast('V3.1 브리핑을 클립보드에 복사했습니다.');
+  }catch(error){
+    showToast('브리핑 복사 권한이 없어 복사하지 못했습니다.');
+  }
+}
+
+const MTF_TFS = ['1h','4h','12h','1d','1w','1M'];
+const MTF_LABELS = {'1h':'1H','4h':'4H','12h':'12H','1d':'일봉','1w':'주봉','1M':'월봉'};
 
 async function loadMultiTimeframeSummary(symbol, exchange) {
   const el=document.getElementById('mtfSummary');
   if(!el || !symbol || !exchange) return;
+  const selected=currentV31Context();
+  if(!selected || selected.symbol!==symbol || selected.exchange!==exchange) return;
   const seq=++mtfSeq;
-  el.innerHTML=`${esc(exchange)} USDT 무기한 · 5개 시간봉 로딩 중`;
+  el.innerHTML=`${esc(exchange)} USDT 무기한 · 6개 시간봉 로딩 중`;
+  setV31PanelState(symbol,currentV31Context()?.tf||tf,`${symbol.replace('USDT','')} · 6개 시간봉과 USDT/KRW 환율 로딩 중`,'로딩');
+  const fxPromise=fetchUsdtKrw();
 
   const entries=await Promise.all(MTF_TFS.map(async tfItem=>{
     try{
@@ -2307,9 +2599,9 @@ async function loadMultiTimeframeSummary(symbol, exchange) {
       const signal=CoinAnalysis.compositeSignal(closed);
       const last=closed.at(-1);
       const closeTime=last?CoinAnalysis.candleCloseTimeSeconds(last,tfItem):null;
-      return {timeframe:tfItem,signal,bars:closed.length,closeTime,error:null};
+      return {timeframe:tfItem,signal,bars:closed.length,closeTime,rows:closed,error:null};
     }catch(error){
-      return {timeframe:tfItem,signal:null,bars:0,closeTime:null,error:error.message||'조회 실패'};
+      return {timeframe:tfItem,signal:null,bars:0,closeTime:null,rows:[],error:error.message||'조회 실패'};
     }
   }));
 
@@ -2330,6 +2622,10 @@ async function loadMultiTimeframeSummary(symbol, exchange) {
   el.innerHTML=`<div style="font-weight:800;color:${summaryColor};margin-bottom:4px">${esc(summary.label)}</div>`
     +rowsHtml
     +`<div style="margin-top:4px;color:var(--tx3)">${esc(exchange)} USDT 무기한만 사용 · 상승 ${summary.up} / 하락 ${summary.down} / 관망 ${summary.wait} / 없음 ${summary.missing}</div>`;
+  const fx=await fxPromise;
+  if(seq!==mtfSeq) return;
+  const cachedFutures=v31FuturesCache.get(v31ContextKey(symbol,exchange))||null;
+  renderV31Analysis(symbol,exchange,entries,fx,cachedFutures);
 }
 
 function renderSrListForRows(rows, tfArg=tf) {
@@ -2608,6 +2904,7 @@ function applySnapshotToSidebar(item) {
     fetchFuturesRaw(item.symbol, item.exchange).then(f => {
       if (selectedPanelIdx !== item.idx) return;
       item.frVal = Number.isFinite(f.fr) ? f.fr * 100 : 0;
+      cacheV31Futures(f,item.symbol,item.exchange);
       renderTopFutures(f);
       renderFuturesSidebar(f,snap.d2);
       renderSignalForSnapshot(snap, item.frVal || 0);
@@ -2720,6 +3017,7 @@ function changeSplitSymbol(idx, value) {
   saveSplitSymbols();
   selectSplitPanel(idx);
   setWavePanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} ${item.tf} 캔들 로딩 중`,'로딩',false);
+  setV31PanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} ${item.tf} 분석 데이터 로딩 중`,'로딩');
   refreshOneSplitChart(item);
 }
 
@@ -2758,6 +3056,7 @@ async function refreshOneSplitChart(item) {
       });
       updateDataContext(item.symbol,null,item.tf,Date.now(),'갱신 실패');
       setWavePanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} 캔들 로드 실패 · 엘리엇 분석 데이터 없음`,'데이터 없음',false);
+      if(selectedPanelIdx===item.idx) setV31PanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} 캔들 로드 실패 · V3.1 분석 데이터 없음`,'데이터 없음');
       clearFuturesDisplay('갱신 실패');
       const mtf=document.getElementById('mtfSummary');if(mtf)mtf.textContent='갱신 실패 · 이전 결과를 지웠습니다';
       showToast(`⚠️ ${item.symbol} 캔들 데이터를 불러오지 못했습니다 (4개 거래소 모두 실패).`);
@@ -2785,7 +3084,10 @@ function changeSplitTf(idx, value) {
     const item = splitCharts.find(x => x.idx === idx);
     if (!item) return;
     item.tf = value;
-    if(selectedPanelIdx===idx) setWavePanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} ${item.tf} 캔들 로딩 중`,'로딩',false);
+    if(selectedPanelIdx===idx){
+      setWavePanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} ${item.tf} 캔들 로딩 중`,'로딩',false);
+      setV31PanelState(item.symbol,item.tf,`${item.symbol.replace('USDT','')} ${item.tf} 분석 데이터 로딩 중`,'로딩');
+    }
     refreshOneSplitChart(item);
   }
 }
@@ -2873,70 +3175,21 @@ async function loadFearGreed() {
   }
 }
 
-// DXY(달러인덱스) 실시간 연동:
-// 1순위 — Yahoo Finance(DX-Y.NYB) 실시간 시세를 CORS 프록시(allorigins) 경유로 조회
-// 2순위(폴백) — ECB 공식환율(Frankfurter, CORS 지원)로 ICE 공식 DXY 산출식 직접 계산
-// DXY = 50.14348112 × EURUSD^-0.576 × USDJPY^0.136 × GBPUSD^-0.119 × USDCAD^0.091 × USDSEK^0.042 × USDCHF^0.036
+// DXY와 美10년물은 정적 웹에서 검증 가능한 CORS 원자료가 없어 값을 추정하지 않습니다.
 async function loadDxy() {
   const dxyEl = document.getElementById('vDXY');
   if (!dxyEl) return;
-  // 1순위: Yahoo 실시간
-  try {
-    const target = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB?interval=1m&range=1d');
-    const d = await fetchJson(`https://api.allorigins.win/raw?url=${target}`, 7000);
-    const meta = d?.chart?.result?.[0]?.meta;
-    const live = meta?.regularMarketPrice;
-    if (Number.isFinite(live) && live > 50 && live < 200) {
-      dxyEl.textContent = live.toFixed(2);
-      dxyEl.style.color = '';
-      dxyEl.title = 'Yahoo Finance 실시간 시세 (1분 주기 갱신)';
-      return;
-    }
-    throw new Error('Yahoo DXY 값 없음');
-  } catch(e) {
-    console.warn('DXY 실시간 실패, ECB 폴백:', e.message);
-  }
-  // 2순위: ECB 계산 폴백
-  try {
-    const d = await fetchJson('https://api.frankfurter.app/latest?from=USD&to=EUR,JPY,GBP,CAD,SEK,CHF');
-    const r = d?.rates;
-    if (!r || !r.EUR || !r.JPY || !r.GBP || !r.CAD || !r.SEK || !r.CHF) throw new Error('환율 데이터 누락');
-    const dxy = 50.14348112 *
-      Math.pow(r.EUR, 0.576) *
-      Math.pow(r.JPY, 0.136) *
-      Math.pow(r.GBP, 0.119) *
-      Math.pow(r.CAD, 0.091) *
-      Math.pow(r.SEK, 0.042) *
-      Math.pow(r.CHF, 0.036);
-    dxyEl.textContent = dxy.toFixed(2) + '*';
-    dxyEl.style.color = '';
-    dxyEl.title = `ECB 기준환율(${d.date}) 기반 산출값(*) · 실시간 시세와 소폭 오차 가능`;
-  } catch(e) {
-    dxyEl.textContent = '연동 실패';
-    dxyEl.style.color = 'var(--b)';
-    console.warn('DXY 계산 실패:', e.message);
-  }
+  dxyEl.textContent = '현재 확인 불가';
+  dxyEl.style.color = 'var(--b)';
+  dxyEl.title = '정적 웹에서 검증 가능한 CORS 원자료가 없어 값을 추정하지 않음';
 }
 
-// 美 10년물 국채금리: Yahoo Finance(^TNX)는 브라우저 직접 호출 시 CORS를 차단하므로
-// 공개 CORS 프록시(allorigins)를 경유합니다. 프록시 특성상 간헐적으로 실패할 수 있습니다.
 async function loadUs10y() {
   const us10El = document.getElementById('vUS10Y');
   if (!us10El) return;
-  try {
-    const target = encodeURIComponent('https://query1.finance.yahoo.com/v8/finance/chart/%5ETNX?interval=1d&range=5d');
-    const d = await fetchJson(`https://api.allorigins.win/raw?url=${target}`);
-    const result = d?.chart?.result?.[0];
-    const closes = (result?.indicators?.quote?.[0]?.close || []).filter(v => Number.isFinite(v));
-    const last = closes.length ? closes[closes.length-1] : result?.meta?.regularMarketPrice;
-    if (!Number.isFinite(last)) throw new Error('10년물 데이터 없음');
-    us10El.textContent = last.toFixed(2) + '%';
-    us10El.style.color = '';
-  } catch(e) {
-    us10El.textContent = 'investing.com 확인';
-    us10El.style.color = 'var(--b)';
-    console.warn('美10년물 연동 실패(프록시/CORS 제한):', e.message);
-  }
+  us10El.textContent = '현재 확인 불가';
+  us10El.style.color = 'var(--b)';
+  us10El.title = '정적 웹에서 검증 가능한 CORS 원자료가 없어 값을 추정하지 않음';
 }
 
 async function loadMacroRates() {
@@ -2946,22 +3199,8 @@ async function loadMacroRates() {
 async function loadEconCalendar() {
   const box = document.getElementById('macroCalBox');
   if (!box) return;
-  box.innerHTML = '<div style="color:var(--b);font-size:10px">이번 주 美 경제 일정 불러오는 중...</div>';
-  try {
-    const data = await fetchJson('https://nfs.faireconomy.media/ff_calendar_thisweek.json');
-    const rows = Array.isArray(data) ? data : [];
-    const usd = rows.filter(e => e.country === 'USD' && (e.impact === 'High' || /CPI|PCE|Non-Farm|Employ|Unemployment|Fed|FOMC|GDP/i.test(e.title || '')));
-    if (!usd.length) {
-      box.innerHTML = '<div style="color:var(--b);font-size:10px">이번 주 주요 USD 경제 일정 없음</div>';
-      return;
-    }
-    box.innerHTML = `<div class="sb-ttl" style="margin-bottom:6px">이번 주 美 경제 일정</div>` + usd.slice(0,8).map(e => {
-      const color = e.impact==='High' ? 'var(--r)' : e.impact==='Medium' ? 'var(--y)' : 'var(--b)';
-      return `<div class="macro-item"><span class="mi-dot" style="background:${color}"></span><div><div class="mi-date">${esc(e.date||'')} ${esc(e.time||'')}</div><div class="mi-title">${esc(e.title||'')}</div></div></div>`;
-    }).join('');
-  } catch(e) {
-    box.innerHTML = '<div style="color:var(--b);font-size:10px;line-height:1.4">경제 일정 자동 연동 실패(브라우저 환경/CORS 제한).<br>Investing.com 경제캘린더를 참고하세요.</div>';
-  }
+  // 원본 서버가 GitHub Pages 출처의 CORS 요청을 막으므로 실패 요청을 반복하지 않습니다.
+  box.innerHTML = '<div style="color:var(--b);font-size:10px;line-height:1.4">경제 일정: 현재 실시간 데이터 확인 불가(CORS 제한).<br>Investing.com 경제캘린더 원본에서 확인하세요.</div>';
 }
 
 async function loadMacroBriefing() {
