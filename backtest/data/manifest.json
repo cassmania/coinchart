@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "fetchedAtUtc": "2026-08-17T02:21:11.858Z",
+  "source": "Bybit public API / v5 market kline / linear perpetual",
+  "timeframe": "1d",
+  "requestedRange": {
+    "startUtc": "2019-01-01T00:00:00.000Z",
+    "endExclusiveUtc": "2026-08-17T00:00:00.000Z"
+  },
+  "files": [
+    {
+      "symbol": "BTCUSDT",
+      "file": "BTCUSDT_1d.json",
+      "bars": 2336,
+      "firstTimeUtc": "2020-03-25T00:00:00.000Z",
+      "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+      "sha256": "02f4b4a57a39a1c9faa4700c7b1c4ef76c78be6f9c6bf6f7801926dfa7a9122b"
+    },
+    {
+      "symbol": "ETHUSDT",
+      "file": "ETHUSDT_1d.json",
+      "bars": 1981,
+      "firstTimeUtc": "2021-03-15T00:00:00.000Z",
+      "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+      "sha256": "46f96727db9032610f4a14c5dc0e7cd04a49c0a0746606828fd0f4a6108a7238"
+    },
+    {
+      "symbol": "BNBUSDT",
+      "file": "BNBUSDT_1d.json",
+      "bars": 1875,
+      "firstTimeUtc": "2021-06-29T00:00:00.000Z",
+      "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+      "sha256": "8ad6a6e7a2f0ba22654f5497d71ebfdd2c91dcdf7a17adea80acd8aaa5d4ec7e"
+    },
+    {
+      "symbol": "XRPUSDT",
+      "file": "XRPUSDT_1d.json",
+      "bars": 1922,
+      "firstTimeUtc": "2021-05-13T00:00:00.000Z",
+      "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+      "sha256": "ccfabc567c928a49d70ca45d7bd44d74c322785764c886304a311062bb30c23a"
+    },
+    {
+      "symbol": "SOLUSDT",
+      "file": "SOLUSDT_1d.json",
+      "bars": 1767,
+      "firstTimeUtc": "2021-10-15T00:00:00.000Z",
+      "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+      "sha256": "3e4ba16053b5979ed45fb6558807b3818198f0adb01baf81d4f5481593fd8d32"
+    },
+    {
+      "symbol": "ADAUSDT",
+      "file": "ADAUSDT_1d.json",
+      "bars": 1978,
+      "firstTimeUtc": "2021-03-18T00:00:00.000Z",
+      "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+      "sha256": "ec5663c2f577c300e1d6553fb36c5f08eb77c565e847759185999193818b0c94"
+    },
+    {
+      "symbol": "DOGEUSDT",
+      "file": "DOGEUSDT_1d.json",
+      "bars": 1902,
+      "firstTimeUtc": "2021-06-02T00:00:00.000Z",
+      "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+      "sha256": "c69ae9bb79eccad8993d7722396a0957fba9d8fae718db66e83b7afd082bf6d6"
+    },
+    {
+      "symbol": "LINKUSDT",
+      "file": "LINKUSDT_1d.json",
+      "bars": 2126,
+      "firstTimeUtc": "2020-10-21T00:00:00.000Z",
+      "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+      "sha256": "3bbf35e0554d1aa2c1387cd6f3996cfcff01a34e33e8990cf61abc821c90dd21"
+    },
+    {
+      "symbol": "LTCUSDT",
+      "file": "LTCUSDT_1d.json",
+      "bars": 2126,
+      "firstTimeUtc": "2020-10-21T00:00:00.000Z",
+      "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+      "sha256": "7d1bb6889ecfb61713ed2ab2040cb40ee72f2652321e3be6fd40d60f84129a32"
+    },
+    {
+      "symbol": "AVAXUSDT",
+      "file": "AVAXUSDT_1d.json",
+      "bars": 1797,
+      "firstTimeUtc": "2021-09-15T00:00:00.000Z",
+      "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+      "sha256": "da468358e092dcbfb3ceb3fd10287a3a22e9b9ff9de171cee33b5eb8027af732"
+    }
+  ]
+}

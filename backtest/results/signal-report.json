@@ -1,0 +1,482 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-08-17T02:43:22.039Z",
+  "engine": "analysis-engine.js / compositeSignal",
+  "data": {
+    "schemaVersion": 1,
+    "fetchedAtUtc": "2026-08-17T02:21:11.858Z",
+    "source": "Bybit public API / v5 market kline / linear perpetual",
+    "timeframe": "1d",
+    "requestedRange": {
+      "startUtc": "2019-01-01T00:00:00.000Z",
+      "endExclusiveUtc": "2026-08-17T00:00:00.000Z"
+    },
+    "files": [
+      {
+        "symbol": "BTCUSDT",
+        "file": "BTCUSDT_1d.json",
+        "bars": 2336,
+        "firstTimeUtc": "2020-03-25T00:00:00.000Z",
+        "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+        "sha256": "02f4b4a57a39a1c9faa4700c7b1c4ef76c78be6f9c6bf6f7801926dfa7a9122b"
+      },
+      {
+        "symbol": "ETHUSDT",
+        "file": "ETHUSDT_1d.json",
+        "bars": 1981,
+        "firstTimeUtc": "2021-03-15T00:00:00.000Z",
+        "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+        "sha256": "46f96727db9032610f4a14c5dc0e7cd04a49c0a0746606828fd0f4a6108a7238"
+      },
+      {
+        "symbol": "BNBUSDT",
+        "file": "BNBUSDT_1d.json",
+        "bars": 1875,
+        "firstTimeUtc": "2021-06-29T00:00:00.000Z",
+        "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+        "sha256": "8ad6a6e7a2f0ba22654f5497d71ebfdd2c91dcdf7a17adea80acd8aaa5d4ec7e"
+      },
+      {
+        "symbol": "XRPUSDT",
+        "file": "XRPUSDT_1d.json",
+        "bars": 1922,
+        "firstTimeUtc": "2021-05-13T00:00:00.000Z",
+        "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+        "sha256": "ccfabc567c928a49d70ca45d7bd44d74c322785764c886304a311062bb30c23a"
+      },
+      {
+        "symbol": "SOLUSDT",
+        "file": "SOLUSDT_1d.json",
+        "bars": 1767,
+        "firstTimeUtc": "2021-10-15T00:00:00.000Z",
+        "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+        "sha256": "3e4ba16053b5979ed45fb6558807b3818198f0adb01baf81d4f5481593fd8d32"
+      },
+      {
+        "symbol": "ADAUSDT",
+        "file": "ADAUSDT_1d.json",
+        "bars": 1978,
+        "firstTimeUtc": "2021-03-18T00:00:00.000Z",
+        "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+        "sha256": "ec5663c2f577c300e1d6553fb36c5f08eb77c565e847759185999193818b0c94"
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "file": "DOGEUSDT_1d.json",
+        "bars": 1902,
+        "firstTimeUtc": "2021-06-02T00:00:00.000Z",
+        "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+        "sha256": "c69ae9bb79eccad8993d7722396a0957fba9d8fae718db66e83b7afd082bf6d6"
+      },
+      {
+        "symbol": "LINKUSDT",
+        "file": "LINKUSDT_1d.json",
+        "bars": 2126,
+        "firstTimeUtc": "2020-10-21T00:00:00.000Z",
+        "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+        "sha256": "3bbf35e0554d1aa2c1387cd6f3996cfcff01a34e33e8990cf61abc821c90dd21"
+      },
+      {
+        "symbol": "LTCUSDT",
+        "file": "LTCUSDT_1d.json",
+        "bars": 2126,
+        "firstTimeUtc": "2020-10-21T00:00:00.000Z",
+        "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+        "sha256": "7d1bb6889ecfb61713ed2ab2040cb40ee72f2652321e3be6fd40d60f84129a32"
+      },
+      {
+        "symbol": "AVAXUSDT",
+        "file": "AVAXUSDT_1d.json",
+        "bars": 1797,
+        "firstTimeUtc": "2021-09-15T00:00:00.000Z",
+        "lastTimeUtc": "2026-08-16T00:00:00.000Z",
+        "sha256": "da468358e092dcbfb3ceb3fd10287a3a22e9b9ff9de171cee33b5eb8027af732"
+      }
+    ]
+  },
+  "assumptions": {
+    "warmupBars": 240,
+    "maxHoldBars": 20,
+    "stopAtr": 2,
+    "targetR": 1.5,
+    "feeRatePerSide": 0.0006,
+    "slippageRatePerSide": 0.0002,
+    "sameBarPriority": "STOP",
+    "entryTiming": "NEXT_BAR_OPEN",
+    "minimumSample": 60,
+    "thresholdCandidates": [
+      0.2,
+      0.3,
+      0.4,
+      0.5
+    ]
+  },
+  "allThresholds": {
+    "0.2": {
+      "sample": 892,
+      "status": "검증 표본 충족",
+      "winRate": 0.4439461883408072,
+      "averageR": -0.000029772327929476954,
+      "totalR": -0.026556916513093443,
+      "maxDrawdownR": 47.98992856437572
+    },
+    "0.3": {
+      "sample": 889,
+      "status": "검증 표본 충족",
+      "winRate": 0.4161979752530934,
+      "averageR": -0.02595446213146323,
+      "totalR": -23.073516834870812,
+      "maxDrawdownR": 61.01797224386803
+    },
+    "0.4": {
+      "sample": 837,
+      "status": "검증 표본 충족",
+      "winRate": 0.42771804062126645,
+      "averageR": -0.021470749813230973,
+      "totalR": -17.971017593674325,
+      "maxDrawdownR": 44.270743647276916
+    },
+    "0.5": {
+      "sample": 751,
+      "status": "검증 표본 충족",
+      "winRate": 0.440745672436751,
+      "averageR": -0.010255655316326578,
+      "totalR": -7.701997142561261,
+      "maxDrawdownR": 39.987328102582296
+    }
+  },
+  "walkForward": {
+    "folds": [
+      {
+        "fold": 1,
+        "trainEndUtc": "2022-10-15T00:00:00.000Z",
+        "testEndUtc": "2023-07-22T00:00:00.000Z",
+        "threshold": 0.5,
+        "train": {
+          "sample": 137,
+          "status": "검증 표본 충족",
+          "winRate": 0.5036496350364964,
+          "averageR": 0.07092591289331529,
+          "totalR": 9.716850066384195,
+          "maxDrawdownR": 14.929945720858095
+        },
+        "test": {
+          "sample": 125,
+          "status": "검증 표본 충족",
+          "winRate": 0.448,
+          "averageR": 0.0012601632809756485,
+          "totalR": 0.15752041012195606,
+          "maxDrawdownR": 18.684641485715147
+        }
+      },
+      {
+        "fold": 2,
+        "trainEndUtc": "2023-07-22T00:00:00.000Z",
+        "testEndUtc": "2024-04-27T00:00:00.000Z",
+        "threshold": 0.5,
+        "train": {
+          "sample": 266,
+          "status": "검증 표본 충족",
+          "winRate": 0.47368421052631576,
+          "averageR": 0.033476415546907445,
+          "totalR": 8.90472653547738,
+          "maxDrawdownR": 22.237315232992362
+        },
+        "test": {
+          "sample": 113,
+          "status": "검증 표본 충족",
+          "winRate": 0.4424778761061947,
+          "averageR": 0.04426182294302371,
+          "totalR": 5.001585992561679,
+          "maxDrawdownR": 14.340378207737922
+        }
+      },
+      {
+        "fold": 3,
+        "trainEndUtc": "2024-04-27T00:00:00.000Z",
+        "testEndUtc": "2025-02-01T00:00:00.000Z",
+        "threshold": 0.5,
+        "train": {
+          "sample": 382,
+          "status": "검증 표본 충족",
+          "winRate": 0.46335078534031415,
+          "averageR": 0.03636837452834148,
+          "totalR": 13.892719069826445,
+          "maxDrawdownR": 23.309998956506696
+        },
+        "test": {
+          "sample": 124,
+          "status": "검증 표본 충족",
+          "winRate": 0.3870967741935484,
+          "averageR": -0.11879620873848236,
+          "totalR": -14.730729883571813,
+          "maxDrawdownR": 29.634289597755227
+        }
+      },
+      {
+        "fold": 4,
+        "trainEndUtc": "2025-02-01T00:00:00.000Z",
+        "testEndUtc": "2025-11-08T00:00:00.000Z",
+        "threshold": 0.5,
+        "train": {
+          "sample": 515,
+          "status": "검증 표본 충족",
+          "winRate": 0.44271844660194176,
+          "averageR": -0.0011810378160132394,
+          "totalR": -0.6082344752468183,
+          "maxDrawdownR": 34.272391946096725
+        },
+        "test": {
+          "sample": 126,
+          "status": "검증 표본 충족",
+          "winRate": 0.4444444444444444,
+          "averageR": -0.03315971382877816,
+          "totalR": -4.178123942426048,
+          "maxDrawdownR": 15.7890225542935
+        }
+      },
+      {
+        "fold": 5,
+        "trainEndUtc": "2025-11-08T00:00:00.000Z",
+        "testEndUtc": "2026-08-15T00:00:00.000Z",
+        "threshold": 0.5,
+        "train": {
+          "sample": 648,
+          "status": "검증 표본 충족",
+          "winRate": 0.44135802469135804,
+          "averageR": -0.010573185129425554,
+          "totalR": -6.851423963867759,
+          "maxDrawdownR": 34.41157478133685
+        },
+        "test": {
+          "sample": 91,
+          "status": "검증 표본 충족",
+          "winRate": 0.38461538461538464,
+          "averageR": -0.12133467682845868,
+          "totalR": -11.04145559138974,
+          "maxDrawdownR": 18.841377278410008
+        }
+      }
+    ],
+    "combined": {
+      "sample": 579,
+      "status": "검증 표본 충족",
+      "winRate": 0.4231433506044905,
+      "averageR": -0.04281727636391022,
+      "totalR": -24.791203014704017,
+      "maxDrawdownR": 47.22188583766214
+    }
+  },
+  "symbolHoldout": {
+    "symbols": [
+      {
+        "symbol": "BTCUSDT",
+        "threshold": 0.2,
+        "train": {
+          "sample": 781,
+          "status": "검증 표본 충족",
+          "winRate": 0.45454545454545453,
+          "averageR": 0.01940336001029173,
+          "totalR": 15.154024168037843,
+          "maxDrawdownR": 39.65853145859495
+        },
+        "test": {
+          "sample": 111,
+          "status": "검증 표본 충족",
+          "winRate": 0.36936936936936937,
+          "averageR": -0.13676199175271106,
+          "totalR": -15.180581084550926,
+          "maxDrawdownR": 24.167336208837888
+        }
+      },
+      {
+        "symbol": "ETHUSDT",
+        "threshold": 0.2,
+        "train": {
+          "sample": 799,
+          "status": "검증 표본 충족",
+          "winRate": 0.44806007509386736,
+          "averageR": 0.0074736635888786734,
+          "totalR": 5.97145720751406,
+          "maxDrawdownR": 45.85608219925009
+        },
+        "test": {
+          "sample": 93,
+          "status": "검증 표본 충족",
+          "winRate": 0.40860215053763443,
+          "averageR": -0.06449477552717355,
+          "totalR": -5.99801412402714,
+          "maxDrawdownR": 10.885499033558569
+        }
+      },
+      {
+        "symbol": "BNBUSDT",
+        "threshold": 0.2,
+        "train": {
+          "sample": 812,
+          "status": "검증 표본 충족",
+          "winRate": 0.4433497536945813,
+          "averageR": -0.0010693108027150478,
+          "totalR": -0.8682803718046188,
+          "maxDrawdownR": 45.96833306670328
+        },
+        "test": {
+          "sample": 80,
+          "status": "검증 표본 충족",
+          "winRate": 0.45,
+          "averageR": 0.010521543191143864,
+          "totalR": 0.8417234552915092,
+          "maxDrawdownR": 9.533924519909247
+        }
+      },
+      {
+        "symbol": "XRPUSDT",
+        "threshold": 0.5,
+        "train": {
+          "sample": 685,
+          "status": "검증 표본 충족",
+          "winRate": 0.44525547445255476,
+          "averageR": 0.0006842324565879828,
+          "totalR": 0.46869923276276826,
+          "maxDrawdownR": 34.07762709991544
+        },
+        "test": {
+          "sample": 66,
+          "status": "검증 표본 충족",
+          "winRate": 0.3939393939393939,
+          "averageR": -0.12379842992915191,
+          "totalR": -8.170696375324026,
+          "maxDrawdownR": 12.17082612037302
+        }
+      },
+      {
+        "symbol": "SOLUSDT",
+        "threshold": 0.2,
+        "train": {
+          "sample": 812,
+          "status": "검증 표본 충족",
+          "winRate": 0.4396551724137931,
+          "averageR": -0.006322403388327019,
+          "totalR": -5.133791551321539,
+          "maxDrawdownR": 52.40994952526947
+        },
+        "test": {
+          "sample": 80,
+          "status": "검증 표본 충족",
+          "winRate": 0.4875,
+          "averageR": 0.06384043293510569,
+          "totalR": 5.107234634808455,
+          "maxDrawdownR": 5.711390406926782
+        }
+      },
+      {
+        "symbol": "ADAUSDT",
+        "threshold": 0.5,
+        "train": {
+          "sample": 674,
+          "status": "검증 표본 충족",
+          "winRate": 0.4421364985163205,
+          "averageR": -0.005150406723094767,
+          "totalR": -3.471374131365873,
+          "maxDrawdownR": 32.02093742633529
+        },
+        "test": {
+          "sample": 77,
+          "status": "검증 표본 충족",
+          "winRate": 0.42857142857142855,
+          "averageR": -0.054943155989550574,
+          "totalR": -4.230623011195394,
+          "maxDrawdownR": 10.108962499169548
+        }
+      },
+      {
+        "symbol": "DOGEUSDT",
+        "threshold": 0.2,
+        "train": {
+          "sample": 810,
+          "status": "검증 표본 충족",
+          "winRate": 0.4382716049382716,
+          "averageR": -0.014859171747901597,
+          "totalR": -12.035929115800293,
+          "maxDrawdownR": 50.357209641370815
+        },
+        "test": {
+          "sample": 82,
+          "status": "검증 표본 충족",
+          "winRate": 0.5,
+          "averageR": 0.1464557585278927,
+          "totalR": 12.009372199287201,
+          "maxDrawdownR": 5.240918092799689
+        }
+      },
+      {
+        "symbol": "LINKUSDT",
+        "threshold": 0.2,
+        "train": {
+          "sample": 795,
+          "status": "검증 표본 충족",
+          "winRate": 0.4427672955974843,
+          "averageR": -0.004822746218859373,
+          "totalR": -3.8340832439932013,
+          "maxDrawdownR": 43.74065022094592
+        },
+        "test": {
+          "sample": 97,
+          "status": "검증 표본 충족",
+          "winRate": 0.4536082474226804,
+          "averageR": 0.03925284873690819,
+          "totalR": 3.807526327480094,
+          "maxDrawdownR": 9.045115096694856
+        }
+      },
+      {
+        "symbol": "LTCUSDT",
+        "threshold": 0.2,
+        "train": {
+          "sample": 787,
+          "status": "검증 표본 충족",
+          "winRate": 0.45108005082592123,
+          "averageR": 0.014317482910981633,
+          "totalR": 11.267859050942546,
+          "maxDrawdownR": 38.52593383172001
+        },
+        "test": {
+          "sample": 105,
+          "status": "검증 표본 충족",
+          "winRate": 0.3904761904761905,
+          "averageR": -0.1075658663567204,
+          "totalR": -11.294415967455642,
+          "maxDrawdownR": 21.006718021613544
+        }
+      },
+      {
+        "symbol": "AVAXUSDT",
+        "threshold": 0.2,
+        "train": {
+          "sample": 817,
+          "status": "검증 표본 충족",
+          "winRate": 0.4430844553243574,
+          "averageR": 0.0018575327597136963,
+          "totalR": 1.5176042646860899,
+          "maxDrawdownR": 44.227602756661405
+        },
+        "test": {
+          "sample": 75,
+          "status": "검증 표본 충족",
+          "winRate": 0.4533333333333333,
+          "averageR": -0.02058881574932244,
+          "totalR": -1.544161181199183,
+          "maxDrawdownR": 7.27017725378758
+        }
+      }
+    ],
+    "combined": {
+      "sample": 866,
+      "status": "검증 표본 충족",
+      "winRate": 0.43071593533487296,
+      "averageR": -0.028467246104948083,
+      "totalR": -24.65263512688504,
+      "maxDrawdownR": 58.550132705550595
+    }
+  }
+}
