@@ -455,6 +455,17 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
     </div>
     <canvas id="vpvrCanvas"></canvas>
   </div>
+  <div id="usdtdChartView" style="display:none;flex:1;min-height:560px;flex-direction:column;overflow:auto;background:var(--bg);padding:12px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+      <b style="font-size:16px">테더 도미넌스 (USDT.D) 차트</b>
+      <span class="sb-sel-sym">TradingView · CRYPTOCAP:USDT.D · 일봉</span>
+    </div>
+    <div style="background:#fff;border-radius:6px;overflow:hidden;min-height:520px;flex:1">
+      <iframe title="테더 도미넌스 차트" src="https://www.tradingview.com/widgetembed/?frameElementId=tradingview_usdtd_coinchart&symbol=CRYPTOCAP%3AUSDT.D&interval=D&hidesidetoolbar=0&symboledit=0&saveimage=1&toolbarbg=f1f3f6&studies=%5B%5D&theme=light&style=1&timezone=Asia%2FSeoul&withdateranges=1&hideideas=1&hidelegend=0&hidevolume=1&allow_symbol_change=0" style="width:100%;height:520px;border:0" loading="eager" allowfullscreen></iframe>
+    </div>
+    <div id="usdtdChartMeta" class="v31-part" style="margin-top:10px">현재 USDT.D 자료를 확인하는 중입니다.</div>
+    <div style="font-size:11px;line-height:1.55;color:var(--tx2);margin-top:8px">USDT.D 상승은 위험회피 가능성, 하락은 위험선호 가능성을 시사할 수 있습니다. BTC 가격·BTC 도미넌스·전체 시가총액과 함께 확인하며 이 지표 하나만으로 매매 방향을 확정하지 않습니다.</div>
+  </div>
   <div class="sub-row">
     <div class="sub-pane" id="rsiPane"><div class="sub-lbl">RSI(14) <span id="lRSI" style="color:var(--y)"></span></div></div>
     <div class="sub-pane" id="macdPane"><div class="sub-lbl">MACD <span id="lMACD" style="color:var(--b)"></span></div></div>
@@ -657,6 +668,12 @@ function toMexcSymbol(s) {
 
 function normalizeSymbol(s) {
   return String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function isUsdtDominanceQuery(value) {
+  const q=String(value || '').trim().toLowerCase();
+  return q==='__USDT_DOMINANCE__' || q==='usdt.d' || q==='usdt dominance'
+    || q==='tether dominance' || q==='테더 도미넌스' || q==='테더도미넌스';
 }
 
 function mergeCoin(map, coin) {
@@ -1943,16 +1960,28 @@ function filterCoins() {
   const src = favTab === 'fav' ? allCoins.filter(c => favs.includes(c.symbol)) : allCoins;
   filteredCoins = q ? src.filter(c => c.symbol.includes(q) || c.base.includes(q)) : src;
   renderCoinList();
+  if (isUsdtDominanceQuery(raw)) showUsdtDominanceChart();
 }
 
 function renderCoinList() {
   const list = document.getElementById('coinList');
   const coins = filteredCoins.slice(0,160);
+  const raw = document.getElementById('coinSearchInp')?.value || '';
+  const showDominance = isUsdtDominanceQuery(raw)
+    || raw.toLowerCase().includes('테더')
+    || raw.toLowerCase().includes('usdt.d')
+    || raw.toLowerCase().includes('tether dominance');
+  const dominanceItem = showDominance ? `<div class="coin-item" data-symbol="__USDT_DOMINANCE__">
+      <div style="display:flex;align-items:center;gap:7px"><span style="font-size:16px">📊</span>
+        <div><div class="ci-name">테더 도미넌스 <span style="color:var(--tx3);font-size:10px">USDT.D</span></div>
+        <div style="font-size:9px;color:var(--tx3);margin-top:2px">TradingView 시계열 차트</div></div>
+      </div><div class="ci-right"><div class="ci-price">차트</div></div>
+    </div>` : '';
   if (!coins.length) {
-    list.innerHTML = '<div style="padding:14px;text-align:center;color:var(--tx3);font-size:12px;">검색 결과 없음</div>';
+    list.innerHTML = dominanceItem || '<div style="padding:14px;text-align:center;color:var(--tx3);font-size:12px;">검색 결과 없음</div>';
     return;
   }
-  list.innerHTML = coins.map(c => {
+  list.innerHTML = dominanceItem + coins.map(c => {
     const isFav = favs.includes(c.symbol), d2 = c.price>100?2:c.price>1?4:6, isUp = c.chg>=0;
     const safeSymbol = esc(c.symbol), safeBase = esc(c.base);
     const badges = c.markets.map(m => `<span style="font-size:9px;color:var(--tx2);border:1px solid var(--bd);border-radius:3px;padding:1px 3px;margin-right:2px">${m}</span>`).join('');
@@ -1987,8 +2016,13 @@ document.getElementById('coinList').addEventListener('click', e => {
 });
 
 function selectCoin(s) {
+  if (isUsdtDominanceQuery(s)) {
+    showUsdtDominanceChart();
+    return;
+  }
   s = normalizeSymbol(s);
   if (!/^[A-Z0-9]+USDT$/.test(s)) return;
+  restoreCoinChartView();
   closeSearch();
 
   // 분할 모드에서 1번(메인)이 아닌 다른 차트가 선택된 상태라면
@@ -2019,6 +2053,41 @@ function selectCoin(s) {
   setV31PanelState(s,tf,`${s.replace('USDT','')} ${tf} 분석 데이터 로딩 중`,'로딩');
   closeWS(true);
   loadCandles().then(ok => { if (ok) { connectWS(); loadFutures(); } });
+}
+
+function showUsdtDominanceChart() {
+  closeWS(true);
+  const chartMain=document.getElementById('chartMain');
+  const subRow=document.querySelector('.sub-row');
+  const view=document.getElementById('usdtdChartView');
+  if(!view) return;
+  chartMain.style.display='none';
+  if(subRow) subRow.style.display='none';
+  view.style.display='flex';
+  document.getElementById('symDisplay').value='USDT.D';
+  document.getElementById('tpSym').textContent='USDT.D';
+  document.getElementById('tpExch').textContent='TradingView';
+  document.getElementById('tpPrice').textContent=usdtDominanceState ? `${usdtDominanceState.value.toFixed(3)}%` : '--';
+  document.getElementById('tpChg').textContent='도미넌스';
+  document.getElementById('marketContext').textContent='TradingView·CRYPTOCAP:USDT.D·일봉';
+  document.getElementById('dataUpdated').textContent=usdtDominanceState ? kstTime(usdtDominanceState.fetchedAt,false)+' KST' : '조회 중';
+  const meta=document.getElementById('usdtdChartMeta');
+  if(usdtDominanceState){
+    const d=usdtDominanceState;
+    const money=n=>n>=1e12?`$${(n/1e12).toFixed(2)}T`:n>=1e9?`$${(n/1e9).toFixed(2)}B`:`$${(n/1e6).toFixed(1)}M`;
+    meta.innerHTML=`<b style="color:#9b7bff;font-size:16px">${d.value.toFixed(3)}%</b> 현재 USDT.D · USDT 시가총액 ${money(d.usdtMarketCap)} · 전체 시장 ${money(d.totalMarketCap)}<br><span style="color:var(--tx3)">현재값 출처: ${esc(d.source)} · 차트 출처: TradingView CRYPTOCAP:USDT.D</span>`;
+  } else {
+    meta.textContent='현재 USDT.D 자료 확인 불가 · 차트는 TradingView에서 표시됩니다.';
+  }
+}
+
+function restoreCoinChartView() {
+  const chartMain=document.getElementById('chartMain');
+  const subRow=document.querySelector('.sub-row');
+  const view=document.getElementById('usdtdChartView');
+  if(chartMain) chartMain.style.display='';
+  if(subRow) subRow.style.display='';
+  if(view) view.style.display='none';
 }
 
 function connectWS() {
