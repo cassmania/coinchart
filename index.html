@@ -395,6 +395,15 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
     </div>
   </div>
   <div class="sb-sec">
+    <div class="sb-ttl-row">
+      <div class="sb-ttl" style="margin-bottom:0">테더 도미넌스 (USDT.D)</div>
+      <span class="sb-sel-sym" id="usdtDominanceUpdated">--</span>
+    </div>
+    <div id="usdtDominanceBox" class="v31-part" data-state="대기">
+      <div class="v31-meta">USDT 시가총액과 전체 암호화폐 시가총액을 불러오는 중입니다.</div>
+    </div>
+  </div>
+  <div class="sb-sec">
     <div class="sb-ttl-row"><div class="sb-ttl" style="margin-bottom:0">📐 엘리엇 파동 분석</div><span class="sb-sel-sym" id="waveConf">--</span></div>
     <div id="waveBox" style="font-size:11px;line-height:1.6;color:var(--tx2)">캔들 로딩 후 자동 카운팅</div>
   </div>
@@ -472,6 +481,8 @@ let loadSeq = 0, futuresSeq = 0, mtfSeq = 0, wsReconnectTimer = null, wsManualCl
 let v31State = null;
 let v31FuturesCache = new Map();
 let usdtKrwCache = null;
+let usdtDominanceState = null;
+let usdtDominanceSeq = 0;
 let vpvrRenderTimer = null;
 let vpvrMode = 'visible';
 try { if(localStorage.getItem('vpvrMode')==='fixed') vpvrMode='fixed'; } catch(e) {}
@@ -2343,6 +2354,64 @@ async function fetchUsdtKrw() {
   }
 }
 
+/**
+ * CoinGecko 공개 원자료로 USDT 도미넌스를 계산합니다.
+ *
+ * USDT.D는 USDT 가격이나 USDT/KRW 환율이 아니라 시가총액 비중입니다.
+ * 따라서 전체 암호화폐 시가총액과 USDT 시가총액을 같은 갱신 주기에 받아
+ * USDT 시가총액 ÷ 전체 시가총액 × 100으로 계산합니다.
+ */
+function renderUsdtDominance(d) {
+  const box=document.getElementById('usdtDominanceBox');
+  const updated=document.getElementById('usdtDominanceUpdated');
+  if(!box) return;
+  if(!d){
+    box.dataset.state='데이터 없음';
+    box.innerHTML='<div class="v31-meta">USDT 도미넌스 현재 데이터 확인 불가</div>'
+      +'<div class="v31-line v31-missing">CoinGecko 공개 API 응답을 확인하지 못했습니다. 다른 코인 분석은 계속 표시합니다.</div>';
+    if(updated) updated.textContent='확인 불가';
+    return;
+  }
+  const value=Number(d.value);
+  const money=n=>n>=1e12?`$${(n/1e12).toFixed(2)}T`:n>=1e9?`$${(n/1e9).toFixed(2)}B`:`$${(n/1e6).toFixed(1)}M`;
+  box.dataset.state='정상';
+  box.innerHTML=`<div class="v31-meta">기준 ${kstTime(d.fetchedAt)} KST · ${esc(d.source)} · 근거 품질 B</div>
+    <div class="v31-line"><b style="color:#9b7bff;font-size:16px">${value.toFixed(3)}%</b> 현재 USDT.D<br>
+      USDT 시가총액 ${money(d.usdtMarketCap)} · 전체 시장 ${money(d.totalMarketCap)}<br>
+      <span class="v31-missing">현재값만 확인됨 · 시계열 없이 상승·하락을 확정하지 않음</span></div>
+    <div class="v31-line" style="margin-top:5px">USDT.D 상승은 위험회피 가능성, 하락은 위험선호 가능성을 뜻할 수 있습니다. BTC·BTC 도미넌스·전체 시가총액과 교차 확인합니다.</div>`;
+  if(updated) updated.textContent=`${value.toFixed(3)}% · ${kstTime(d.fetchedAt,false)}`;
+}
+
+async function loadUsdtDominance() {
+  const seq=++usdtDominanceSeq;
+  try{
+    const [globalData,tetherData]=await Promise.all([
+      fetchJson('https://api.coingecko.com/api/v3/global'),
+      fetchJson('https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=usd&include_market_cap=true')
+    ]);
+    const total=Number(globalData?.data?.total_market_cap?.usd);
+    const usdt=Number(tetherData?.tether?.usd_market_cap);
+    if(!(total>0)||!(usdt>0)) throw new Error('시가총액 원자료 부족');
+    const result={
+      value:usdt/total*100,
+      totalMarketCap:total,
+      usdtMarketCap:usdt,
+      fetchedAt:Date.now(),
+      source:'CoinGecko /global + /simple/price'
+    };
+    if(seq!==usdtDominanceSeq) return;
+    usdtDominanceState=result;
+    renderUsdtDominance(result);
+    if(v31State) renderV31Analysis(v31State.symbol,v31State.exchange,v31State.entries,v31State.fx,v31State.futures);
+  }catch(error){
+    if(seq!==usdtDominanceSeq) return;
+    usdtDominanceState=null;
+    renderUsdtDominance(null);
+    console.warn('USDT 도미넌스 조회 실패:',error.message);
+  }
+}
+
 function v31Price(price, fx, digits=null) {
   if(!Number.isFinite(price)) return '계산 불가';
   const d2=digits==null?dpFor(price):digits;
@@ -2466,6 +2535,9 @@ function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
   const vpvrText=vpvr
     ? `${v31Price(vpvr.price,fx)} · ${primaryTf} 최근 ${Math.min(rows.length,180)}개 확정봉 OHLCV 분배 근사`
     : '현재 실시간 데이터 확인 불가';
+  const dominanceText=usdtDominanceState&&Number.isFinite(usdtDominanceState.value)
+    ? `USDT.D ${usdtDominanceState.value.toFixed(3)}% · 현재값 기준 · ${usdtDominanceState.source}`
+    : 'USDT 도미넌스 현재 데이터 확인 불가';
 
   const fundingText=Number.isFinite(futuresData?.fr)
     ? `${futuresData.exchange} ${futuresData.marketType} · ${(futuresData.fr*100).toFixed(4)}% · ${kstTime(futuresData.fetchedAt)} KST`
@@ -2508,7 +2580,7 @@ function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
   box.innerHTML=`
     <div class="v31-meta">${esc(symbol.replace('USDT','/USDT'))} · ${esc(exchange)} USDT 무기한 · 현재가 ${esc(v31Price(currentPrice,fx))} · 기준 ${kstTime(Date.now())} KST<br>마지막 확정봉 ${v31Time(closeTime)} · ${esc(fxText)} · 근거 품질 A(공식 거래소 OHLCV+재현 계산)</div>
     <div class="v31-part"><div class="v31-part-title">PART 1 · 추세 및 유동성</div>
-      <div class="v31-line"><b>${esc(primaryTf.toUpperCase())}</b> ${esc(adxText)}<br>MA20/50/200 ${esc(maText)} · SuperTrend ${esc(stText)}<br>${esc(breakText)} · ${esc(sweepText)}<br><b>저항</b> ${esc(resistanceText)}<br><b>지지</b> ${esc(supportText)}<br>FVG ${esc(fvgText)}<br>오더블록 ${esc(obText)}<br>VPVR POC ${esc(vpvrText)}</div>
+      <div class="v31-line"><b>${esc(primaryTf.toUpperCase())}</b> ${esc(adxText)}<br>MA20/50/200 ${esc(maText)} · SuperTrend ${esc(stText)}<br>${esc(breakText)} · ${esc(sweepText)}<br><b>저항</b> ${esc(resistanceText)}<br><b>지지</b> ${esc(supportText)}<br>FVG ${esc(fvgText)}<br>오더블록 ${esc(obText)}<br>VPVR POC ${esc(vpvrText)}<br><b>USDT.D</b> ${esc(dominanceText)}</div>
     </div>
     <div class="v31-part"><div class="v31-part-title">PART 2 · 모멘텀 및 파동</div>
       <div class="v31-line">${esc(momentumText)}<br>RSI 다이버전스 ${esc(divergenceText)}<br>피보나치 ${esc(fibText)}<br>엘리엇은 아래 종목별 주·대안 카운트와 무효화 기준 참조</div>
@@ -2542,6 +2614,7 @@ function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
     `- FVG: ${fvgText}`,
     `- 오더블록: ${obText}`,
     `- VPVR POC: ${vpvrText}`,
+    `- USDT 도미넌스: ${dominanceText}`,
     `■ 모멘텀 및 파동 구조`,
     `- RSI/MACD/거래량: ${momentumText}`,
     `- RSI 다이버전스: ${divergenceText}`,
@@ -3300,7 +3373,9 @@ renderFavChips();
 sym='BTCUSDT';
 document.getElementById('symDisplay').value='BTC/USDT';
 loadCandles().then(ok=>{ if(ok){ connectWS(); loadFutures(); } });
+loadUsdtDominance();
 setInterval(loadFutures, 30000);
+setInterval(loadUsdtDominance, 60*1000);       // 시장 전체 시가총액 기반 USDT.D 갱신
 loadMacroBriefing();
 setInterval(loadMacroBriefing, 5*60*1000);   // 매크로 브리핑(캘린더·공포탐욕) 5분 주기
 setInterval(loadMacroRates, 60*1000);        // DXY·美10년물 1분 주기 갱신

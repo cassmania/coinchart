@@ -17,5 +17,9 @@ assert.match(html, /fetchJson\('https:\/\/api\.upbit\.com\/v1\/ticker\?markets=K
 assert.match(html, /setV31PanelState\(s,tf,`\$\{s\.replace\('USDT',''\)\} \$\{tf\} 분석 데이터 로딩 중`,'로딩'\)/);
 assert.match(html, /cacheV31Futures\(f,item\.symbol,item\.exchange\)/);
 assert.match(html, /CoinV31\.confirmedPivots\(rows,5\)/);
+assert.match(html, /id="usdtDominanceBox"/);
+assert.match(html, /api\.coingecko\.com\/api\/v3\/global/);
+assert.match(html, /USDT 도미넌스 현재 데이터 확인 불가/);
+assert.match(html, /USDT\.D/);
 
-console.log('V3.1 화면 통합 회귀 테스트 통과: 6개 시간봉·종목 격리·환율 출처·데이터 없음·확정 피보나치');
+console.log('V3.1 화면 통합 회귀 테스트 통과: 6개 시간봉·종목 격리·환율 출처·데이터 없음·확정 피보나치·USDT 도미넌스');
