@@ -8,6 +8,7 @@
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script src="./analysis-engine.js"></script>
 <script src="./v3-analysis.js"></script>
+<script src="./v41-analysis.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 :root{--bg:#0d0e14;--bg2:#12141c;--bg3:#1a1d28;--bd:#252840;--tx:#e2e4f0;--tx2:#7a7e9a;--tx3:#363a58;--tx-strong:#ffffff;--g:#0ecb81;--r:#f6465d;--b:#4e7ff7;--y:#f0a500;--p:#a259ff;--c:#00d4ff;}
@@ -387,7 +388,7 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
   </div>
   <div class="sb-sec">
     <div class="sb-ttl-row">
-      <div class="sb-ttl" style="margin-bottom:0">AI MASTER 분석 V3.1</div>
+      <div class="sb-ttl" style="margin-bottom:0">AI MASTER 분석 V4.1</div>
       <button class="v31-copy" id="v31Copy" onclick="copyV31Briefing()" disabled>브리핑 복사</button>
     </div>
     <div id="v31Box" data-symbol="" data-timeframe="" data-state="대기">
@@ -2556,11 +2557,11 @@ function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
   if(!context || context.symbol!==symbol || context.exchange!==exchange) return;
   const box=document.getElementById('v31Box');
   const button=document.getElementById('v31Copy');
-  if(!box || !window.CoinV31) return;
+  if(!box || !window.CoinV41) return;
 
   const timeframes={};
   entries.forEach(entry=>{ if(entry.rows?.length) timeframes[entry.timeframe]=entry.rows; });
-  const analysis=CoinV31.analyze(timeframes,CoinAnalysis);
+  const analysis=CoinV41.analyze(timeframes,CoinAnalysis);
   const primaryTf=analysis.primaryTimeframe;
   const primaryEntry=entries.find(entry=>entry.timeframe===primaryTf);
   const rows=primaryEntry?.rows||[];
@@ -2585,10 +2586,10 @@ function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
   const sweep=latestValid(analysis.sweeps);
   const divergence=latestValid(analysis.divergences);
   const fib=analysis.fibonacci;
-  const maValues=[frame.ma20,frame.ma50,frame.ma200];
+  const maValues=[frame.ma20,frame.ma60,frame.ma120,frame.ma200];
   const maText=maValues.every(Number.isFinite)
-    ? (frame.ma20>frame.ma50&&frame.ma50>frame.ma200?'정배열':frame.ma20<frame.ma50&&frame.ma50<frame.ma200?'역배열':'혼조')
-    : 'MA200 표본 부족';
+    ? (frame.ma20>frame.ma60&&frame.ma60>frame.ma120&&frame.ma120>frame.ma200?'정배열':frame.ma20<frame.ma60&&frame.ma60<frame.ma120&&frame.ma120<frame.ma200?'역배열':'혼조')
+    : 'SMA 장기 표본 부족';
   const stText=frame.supertrendDirection===1?'상승':frame.supertrendDirection===-1?'하락':'표본 부족';
   const closeTime=CoinAnalysis.candleCloseTimeSeconds(last,primaryTf);
   const adxText=Number.isFinite(frame.adx.adx)
@@ -2612,12 +2613,17 @@ function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
   const divergenceText=divergence
     ? `${divergence.label} · ${v31Price(divergence.first.price,fx)}(RSI ${divergence.first.rsi.toFixed(1)}) → ${v31Price(divergence.second.price,fx)}(RSI ${divergence.second.rsi.toFixed(1)})`
     : '최근 확인 피벗 다이버전스 없음';
+  const cciValue=calcCCILast(rows);
+  const stochValue=calcStochLast(rows);
   const momentumText=Number.isFinite(frame.rsi)&&Number.isFinite(frame.macdHistogram)
-    ? `RSI ${frame.rsi.toFixed(1)} · MACD 히스토그램 ${frame.macdHistogram>=0?'+':''}${frame.macdHistogram.toFixed(dpFor(Math.abs(frame.macdHistogram)||1))} · 거래량 ${Number.isFinite(frame.volumeRatio)?`20봉 평균의 ${frame.volumeRatio.toFixed(2)}배`:'비교 불가'}`
+    ? `RSI(14) ${frame.rsi.toFixed(1)} · CCI(20) ${Number.isFinite(cciValue)?cciValue.toFixed(1):'표본 부족'} · MACD 히스토그램 ${frame.macdHistogram>=0?'+':''}${frame.macdHistogram.toFixed(dpFor(Math.abs(frame.macdHistogram)||1))} · Stochastic(14,3,3) ${Number.isFinite(stochValue)?stochValue.toFixed(1):'표본 부족'} · 거래량 ${Number.isFinite(frame.volumeRatio)?`20봉 평균의 ${frame.volumeRatio.toFixed(2)}배`:'비교 불가'}`
     : '모멘텀 표본 부족';
-  const vpvr=levels.find(level=>level.title==='매물대 POC');
-  const vpvrText=vpvr
-    ? `${v31Price(vpvr.price,fx)} · ${primaryTf} 최근 ${Math.min(rows.length,180)}개 확정봉 OHLCV 분배 근사`
+  const vpvrZones=calcVpvrZones(40,rows.slice(-180));
+  const vpvrText=vpvrZones
+    ? `POC ${v31Price(vpvrZones.poc,fx)} · VAH ${v31Price(vpvrZones.vah,fx)} · VAL ${v31Price(vpvrZones.val,fx)} · ${primaryTf} 최근 ${Math.min(rows.length,180)}개 확정봉 OHLCV 분배 근사`
+    : '현재 실시간 데이터 확인 불가';
+  const vwapText=Number.isFinite(frame.anchoredVwap)
+    ? `${v31Price(frame.anchoredVwap,fx)} · ${CoinAnalysis.vwapAnchorLabel(primaryTf)}`
     : '현재 실시간 데이터 확인 불가';
   const dominanceText=usdtDominanceState&&Number.isFinite(usdtDominanceState.value)
     ? `USDT.D ${usdtDominanceState.value.toFixed(3)}% · 현재값 기준 · ${usdtDominanceState.source}`
@@ -2657,30 +2663,26 @@ function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
   const bias=frame.adx.adx>=25
     ? (frame.adx.plusDi>=frame.adx.minusDi?'조건부 롱 우위':'조건부 숏 우위')
     : '관망 우선';
+  const riskText='포지션 위험액 = 계좌 평가액 × 0.5~1% · 포지션 크기 = 위험액 ÷ |진입가-손절가| · 레버리지는 손절폭과 청산가를 확인해 역산(고정 배수 권장 안 함)';
 
   box.dataset.symbol=symbol;
   box.dataset.timeframe=primaryTf;
   box.dataset.state='정상';
   box.innerHTML=`
-    <div class="v31-meta">${esc(symbol.replace('USDT','/USDT'))} · ${esc(exchange)} USDT 무기한 · 현재가 ${esc(v31Price(currentPrice,fx))} · 기준 ${kstTime(Date.now())} KST<br>마지막 확정봉 ${v31Time(closeTime)} · ${esc(fxText)} · 근거 품질 A(공식 거래소 OHLCV+재현 계산)</div>
-    <div class="v31-part"><div class="v31-part-title">PART 1 · 추세 및 유동성</div>
-      <div class="v31-line"><b>${esc(primaryTf.toUpperCase())}</b> ${esc(adxText)}<br>MA20/50/200 ${esc(maText)} · SuperTrend ${esc(stText)}<br>${esc(breakText)} · ${esc(sweepText)}<br><b>저항</b> ${esc(resistanceText)}<br><b>지지</b> ${esc(supportText)}<br>FVG ${esc(fvgText)}<br>오더블록 ${esc(obText)}<br>VPVR POC ${esc(vpvrText)}<br><b>USDT.D</b> ${esc(dominanceText)}</div>
+    <div class="v31-meta">${esc(symbol.replace('USDT','/USDT'))} · ${esc(exchange)} USDT 무기한 · 현재가 ${esc(v31Price(currentPrice,fx))} · 기준 ${kstTime(Date.now())} KST<br>마지막 확정봉 ${v31Time(closeTime)} · ${esc(fxText)} · V4.1 · 근거 품질 A(공식 거래소 OHLCV+재현 계산)</div>
+    <div class="v31-part"><div class="v31-part-title">PART 0 · 데이터 기준 및 USDT.D</div><div class="v31-line">확정봉만 계산 · OHLCV ${esc(exchange)} 공식 공개 API · 환율 ${esc(fxText)}<br><b>USDT.D</b> ${esc(dominanceText)} · 단독 매매 신호가 아닌 위험선호 보조 필터</div></div>
+    <div class="v31-part"><div class="v31-part-title">PART 1 · 기술적 분석</div>
+      <div class="v31-line"><b>${esc(primaryTf.toUpperCase())}</b> ${esc(adxText)}<br>SMA20/60/120/200 ${esc(maText)} · SuperTrend ${esc(stText)}<br>${esc(momentumText)}<br>RSI 다이버전스 ${esc(divergenceText)}<br>${esc(breakText)} · ${esc(sweepText)}<br><b>저항</b> ${esc(resistanceText)}<br><b>지지</b> ${esc(supportText)}<br>FVG ${esc(fvgText)}<br>오더블록 ${esc(obText)}<br>근사 VPVR ${esc(vpvrText)}<br>앵커 VWAP ${esc(vwapText)}<br>피보나치 ${esc(fibText)}</div>
     </div>
-    <div class="v31-part"><div class="v31-part-title">PART 2 · 모멘텀 및 파동</div>
-      <div class="v31-line">${esc(momentumText)}<br>RSI 다이버전스 ${esc(divergenceText)}<br>피보나치 ${esc(fibText)}<br>엘리엇은 아래 종목별 주·대안 카운트와 무효화 기준 참조</div>
-    </div>
-    <div class="v31-part"><div class="v31-part-title">PART 3 · 파생상품 심리</div>
+    <div class="v31-part"><div class="v31-part-title">PART 2 · 선물 및 군중 심리</div>
       <div class="v31-line">펀딩비 ${esc(fundingText)}<br>OI ${esc(oiText)}<br>${esc(derivativesInterpretation)}<br><span class="v31-missing">CVD/청산맵: 현재 실시간 데이터 확인 불가</span></div>
     </div>
-    <div class="v31-part"><div class="v31-part-title">PART 4 · 펀더멘털</div>
-      <div class="v31-line v31-missing">토큰 언락·고래 이동·프로젝트 이벤트: 현재 실시간 데이터 확인 불가 · 아래 원본 링크에서 별도 확인 필요</div>
-    </div>
-    <div class="v31-part ${longReady?'v31-long':'v31-wait'}"><div class="v31-part-title">PART 5 · 롱 셋업</div><div class="v31-line">${esc(longText)}</div></div>
-    <div class="v31-part ${shortReady?'v31-short':'v31-wait'}"><div class="v31-part-title">숏 셋업 또는 관망</div><div class="v31-line">${esc(shortText)}</div></div>
-    <div class="v31-part v31-wait"><div class="v31-part-title">최종 판단 · ${esc(bias)}</div><div class="v31-line">확정봉 조건이 나오기 전 선진입은 보류. 이 표시는 투자 조언이나 수익 보장이 아닙니다.<br>멘탈케어: 시장은 급해도 확정봉은 뛰지 않습니다. 조건이 올 때만 움직이세요.</div></div>`;
+    <div class="v31-part"><div class="v31-part-title">PART 3 · 온체인 및 고래</div><div class="v31-line v31-missing">거래소 순유입·고래 지갑·MVRV·SOPR: 현재 실시간 데이터 확인 불가</div></div>
+    <div class="v31-part"><div class="v31-part-title">PART 4 · 토큰노믹스 및 뉴스</div><div class="v31-line v31-missing">토큰 언락·기관 동향·프로젝트 이벤트·개별 뉴스: 현재 실시간 데이터 확인 불가 · 웹 조사 미수행</div></div>
+    <div class="v31-part ${longReady?'v31-long':'v31-wait'}"><div class="v31-part-title">PART 5 · 실행 전략 및 위험관리</div><div class="v31-line"><b>롱</b> ${esc(longText)}<br><b>숏/관망</b> ${esc(shortText)}<br><b>최종 판단</b> ${esc(bias)}<br>${esc(riskText)}<br>확정봉 조건 전 선진입 보류 · 수수료/슬리피지 반영 필요 · 투자 조언이나 수익 보장이 아닙니다.</div></div>`;
 
   const briefing=[
-    `AI MASTER CRYPTO TRADING ANALYST V3.1`,
+    `AI MASTER CRYPTO TRADING ANALYST V4.1`,
     `■ 분석 기준`,
     `- 종목/시장: ${symbol.replace('USDT','/USDT')} · ${exchange} USDT 무기한`,
     `- 현재가: ${v31Price(currentPrice,fx)}`,
@@ -2690,14 +2692,15 @@ function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
     `- 환율: ${fxText}`,
     `■ 현재 시장 요약`,
     `- ${primaryTf.toUpperCase()}: ${adxText}`,
-    `- MA20/50/200 ${maText} · SuperTrend ${stText}`,
+    `- SMA20/60/120/200 ${maText} · SuperTrend ${stText}`,
     `- 구조: ${breakText} · ${sweepText}`,
     `■ 핵심 유동성 구간`,
     `- 강한 저항대: ${resistanceText}`,
     `- 핵심 지지대: ${supportText}`,
     `- FVG: ${fvgText}`,
     `- 오더블록: ${obText}`,
-    `- VPVR POC: ${vpvrText}`,
+    `- 근사 VPVR: ${vpvrText}`,
+    `- 앵커 VWAP: ${vwapText}`,
     `- USDT 도미넌스: ${dominanceText}`,
     `■ 모멘텀 및 파동 구조`,
     `- RSI/MACD/거래량: ${momentumText}`,
@@ -2709,11 +2712,14 @@ function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
     `- OI: ${oiText}`,
     `- 가격/OI 해석: ${derivativesInterpretation}`,
     `- CVD/청산맵: 현재 실시간 데이터 확인 불가`,
-    `■ 펀더멘털`,
-    `- 언락·고래·이벤트: 현재 실시간 데이터 확인 불가`,
+    `■ 온체인 및 고래`,
+    `- 순유입·고래·MVRV·SOPR: 현재 실시간 데이터 확인 불가`,
+    `■ 토큰노믹스 및 뉴스`,
+    `- 언락·기관·이벤트·뉴스: 현재 실시간 데이터 확인 불가 · 웹 조사 미수행`,
     `■ 시나리오별 매매 전략`,
     `- 롱: ${longText}`,
     `- 숏/관망: ${shortText}`,
+    `- 위험관리: ${riskText}`,
     `■ 최종 판단`,
     `- 우세 시나리오: ${bias}`,
     `- 미확인: CVD·청산맵·온체인·언락·고래 이동`,
@@ -2728,7 +2734,7 @@ async function copyV31Briefing() {
   if(!v31State?.briefing) return;
   try{
     await navigator.clipboard.writeText(v31State.briefing);
-    showToast('V3.1 브리핑을 클립보드에 복사했습니다.');
+    showToast('V4.1 브리핑을 클립보드에 복사했습니다.');
   }catch(error){
     showToast('브리핑 복사 권한이 없어 복사하지 못했습니다.');
   }

@@ -9,7 +9,7 @@ assert.ok(inlineScript, '인라인 앱 스크립트를 찾을 수 있어야 합�
 assert.doesNotThrow(() => new Function(inlineScript[1]), '인라인 앱 스크립트 문법이 유효해야 합니다.');
 assert.match(html, /<script src="\.\/v3-analysis\.js"><\/script>/);
 assert.match(html, /const MTF_TFS = \['1h','4h','12h','1d','1w','1M'\]/);
-assert.match(html, /CoinV31\.analyze\(timeframes,CoinAnalysis\)/);
+assert.match(html, /CoinV41\.analyze\(timeframes,CoinAnalysis\)/);
 assert.match(html, /box\.dataset\.symbol=symbol/);
 assert.match(html, /box\.dataset\.timeframe=primaryTf/);
 assert.match(html, /CVD\/청산맵: 현재 실시간 데이터 확인 불가/);
