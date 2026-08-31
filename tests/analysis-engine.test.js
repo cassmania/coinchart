@@ -24,6 +24,9 @@ const rsi = A.rsi([1, 2, 3, 2, 4, 3], 3);
 almostEqual(rsi[3], 66.66666666666666);
 almostEqual(rsi[4], 83.33333333333333);
 almostEqual(rsi[5], 60.60606060606061);
+// 상승도 하락도 없는 구간은 과매수(100)가 아니라 중립(50)이어야 합니다.
+const flatRsi = A.rsi(Array(20).fill(100), 14);
+almostEqual(flatRsi.at(-1), 50);
 
 // MACD: 빠른 EMA(2), 느린 EMA(3), 시그널 EMA(2)의 시드 정렬 검증
 const macd = A.macd([1, 2, 3, 4, 5], 2, 3, 2);

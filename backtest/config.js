@@ -6,7 +6,8 @@ module.exports = Object.freeze({
   source: 'Bybit public API / v5 market kline / linear perpetual',
   timeframe: '1d',
   startUtc: '2019-01-01T00:00:00.000Z',
-  endUtc: '2026-08-17T00:00:00.000Z',
+  // 실행 중인 UTC 일봉은 제외하고 직전 확정 일봉까지만 수집합니다.
+  endUtc: new Date(Math.floor(Date.now() / 86400000) * 86400000).toISOString(),
   symbols: [
     'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'SOLUSDT',
     'ADAUSDT', 'DOGEUSDT', 'LINKUSDT', 'LTCUSDT', 'AVAXUSDT'

@@ -111,11 +111,18 @@ function metrics(trades, minimumSample = config.minimumSample) {
   let peakR = 0;
   let maxDrawdownR = 0;
   let wins = 0;
+  let grossProfitR = 0;
+  let grossLossR = 0;
   for (const trade of ordered) {
     equityR += trade.netR;
     peakR = Math.max(peakR, equityR);
     maxDrawdownR = Math.max(maxDrawdownR, peakR - equityR);
-    if (trade.netR > 0) wins += 1;
+    if (trade.netR > 0) {
+      wins += 1;
+      grossProfitR += trade.netR;
+    } else {
+      grossLossR += Math.abs(trade.netR);
+    }
   }
   const count = ordered.length;
   return {
@@ -123,8 +130,31 @@ function metrics(trades, minimumSample = config.minimumSample) {
     status: count >= minimumSample ? '검증 표본 충족' : '표본 부족',
     winRate: count ? wins / count : null,
     averageR: count ? equityR / count : null,
+    profitFactor: grossLossR > 0 ? grossProfitR / grossLossR : null,
     totalR: equityR,
     maxDrawdownR
+  };
+}
+
+/** 첫 60%에서 임계값을 고르고 마지막 40%를 한 번만 평가하는 홀드아웃입니다. */
+function chronologicalHoldout(tradesByThreshold, sets, settings = config) {
+  const times = [...new Set(sets.flatMap(set => set.rows.map(row => row.time)))].sort((a, b) => a - b);
+  const splitTime = times[Math.floor(times.length * 0.6)];
+  if (!splitTime) return { status: '분할 시각 산출 불가' };
+  const selected = chooseThreshold(
+    tradesByThreshold,
+    trade => trade.exitTime < splitTime,
+    settings.minimumSample
+  );
+  if (!selected) return { splitTime, status: '학습 표본 부족' };
+  const testTrades = tradesByThreshold.get(selected.threshold)
+    .filter(trade => trade.signalTime >= splitTime);
+  return {
+    splitTime,
+    splitTimeUtc: new Date(splitTime * 1000).toISOString(),
+    threshold: selected.threshold,
+    train: selected.result,
+    test: metrics(testTrades, settings.minimumSample)
   };
 }
 
@@ -215,6 +245,9 @@ function markdownReport(report) {
     `스냅샷 생성 시각(UTC): ${report.data.fetchedAtUtc}`,
     `기간: ${report.data.requestedRange.startUtc} ~ ${report.data.requestedRange.endExclusiveUtc} 미만`,
     `대상: ${report.data.files.map(file => file.symbol).join(', ')}`, '',
+    '## 결론', '',
+    `- 판정: **${report.verdict}**`,
+    '- 양의 성과 판정 조건: 시간순 마지막 40% 홀드아웃에서 최소 표본, 평균 기대값 0R 초과, Profit Factor 1 초과를 모두 충족해야 함', '',
     '## 체결 가정', '',
     `- 신호: 일봉 확정 종가에서 계산, 미래 봉 미사용`,
     `- 진입: 다음 일봉 시가`,
@@ -225,12 +258,26 @@ function markdownReport(report) {
     `- 표본: ${report.walkForward.combined.sample} (${report.walkForward.combined.status})`,
     `- 승률: ${percent(report.walkForward.combined.winRate)}`,
     `- 평균 기대값: ${number(report.walkForward.combined.averageR, 'R')}`,
+    `- Profit Factor: ${number(report.walkForward.combined.profitFactor)}`,
     `- 최대 낙폭: ${number(report.walkForward.combined.maxDrawdownR, 'R')}`, '',
+    '## 시간순 마지막 40% 홀드아웃', '',
+    `- 분할 시각: ${report.chronologicalHoldout.splitTimeUtc || '산출 불가'}`,
+    `- 학습 선택 임계값: ${report.chronologicalHoldout.threshold ?? '산출 불가'}`,
+    `- 표본: ${report.chronologicalHoldout.test?.sample ?? 0} (${report.chronologicalHoldout.test?.status || report.chronologicalHoldout.status})`,
+    `- 승률: ${percent(report.chronologicalHoldout.test?.winRate ?? null)}`,
+    `- 평균 기대값: ${number(report.chronologicalHoldout.test?.averageR ?? null, 'R')}`,
+    `- Profit Factor: ${number(report.chronologicalHoldout.test?.profitFactor ?? null)}`,
+    `- 최대 낙폭: ${number(report.chronologicalHoldout.test?.maxDrawdownR ?? null, 'R')}`, '',
     '## 종목 홀드아웃', '',
     `- 표본: ${report.symbolHoldout.combined.sample} (${report.symbolHoldout.combined.status})`,
     `- 승률: ${percent(report.symbolHoldout.combined.winRate)}`,
     `- 평균 기대값: ${number(report.symbolHoldout.combined.averageR, 'R')}`,
+    `- Profit Factor: ${number(report.symbolHoldout.combined.profitFactor)}`,
     `- 최대 낙폭: ${number(report.symbolHoldout.combined.maxDrawdownR, 'R')}`, '',
+    '## 데이터 품질', '',
+    '| 종목 | 봉 수 | 시작 | 종료 | 누락 일수 | OHLC 이상 | 0 거래량 |',
+    '|---|---:|---|---|---:|---:|---:|',
+    ...report.data.files.map(file => `| ${file.symbol} | ${file.bars} | ${file.firstTimeUtc} | ${file.lastTimeUtc} | ${file.quality?.missingDays ?? '미측정'} | ${file.quality?.invalidOhlc ?? '미측정'} | ${file.quality?.zeroVolume ?? '미측정'} |`), '',
     '## 해석 제한', '',
     '- 이 결과는 고정 스냅샷과 명시된 비용 가정에만 해당합니다.',
     '- 표본 충족은 수익 보장이나 통계적 유의성을 뜻하지 않습니다.',
@@ -251,9 +298,14 @@ function main() {
   }
 
   const walkForwardResult = walkForward(tradesByThreshold, sets);
+  const chronologicalResult = chronologicalHoldout(tradesByThreshold, sets);
   const holdoutResult = symbolHoldout(tradesByThreshold, sets.map(set => set.symbol));
+  const primary = chronologicalResult.test;
+  const verdict = primary && primary.sample >= config.minimumSample && primary.averageR > 0 && primary.profitFactor > 1
+    ? '양의 성과 관찰'
+    : '전략 우위 미확인';
   const report = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generatedAtUtc: new Date().toISOString(),
     engine: 'analysis-engine.js / compositeSignal',
     data: manifest,
@@ -270,6 +322,8 @@ function main() {
       thresholdCandidates: config.thresholdCandidates
     },
     allThresholds: Object.fromEntries([...tradesByThreshold].map(([threshold, trades]) => [threshold, metrics(trades)])),
+    verdict,
+    chronologicalHoldout: chronologicalResult,
     walkForward: walkForwardResult,
     symbolHoldout: holdoutResult
   };
@@ -278,9 +332,10 @@ function main() {
   fs.writeFileSync(path.join(RESULT_DIR, 'signal-report.json'), JSON.stringify(report, null, 2));
   fs.writeFileSync(path.join(RESULT_DIR, 'signal-report.md'), markdownReport(report));
   console.log(`워크포워드: ${walkForwardResult.combined.sample}건 · ${number(walkForwardResult.combined.averageR, 'R')}`);
+  console.log(`시간순 홀드아웃: ${chronologicalResult.test?.sample || 0}건 · ${number(chronologicalResult.test?.averageR ?? null, 'R')} · ${verdict}`);
   console.log(`종목 홀드아웃: ${holdoutResult.combined.sample}건 · ${number(holdoutResult.combined.averageR, 'R')}`);
 }
 
 if (require.main === module) main();
 
-module.exports = { fillPrice, resolveTrade, simulateSymbol, metrics, chooseThreshold, walkForward, symbolHoldout };
+module.exports = { fillPrice, resolveTrade, simulateSymbol, metrics, chooseThreshold, chronologicalHoldout, walkForward, symbolHoldout };

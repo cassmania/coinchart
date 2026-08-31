@@ -1,7 +1,8 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { resolveTrade, metrics } = require('../backtest/signal-backtest.js');
+const { resolveTrade, metrics, chronologicalHoldout } = require('../backtest/signal-backtest.js');
+const { dataQuality } = require('../backtest/fetch-snapshot.js');
 
 const settings = {
   slippageRatePerSide: 0,
@@ -31,6 +32,31 @@ const result = metrics([
 ], 3);
 assert.equal(result.sample, 3);
 assert.equal(result.winRate, 2 / 3);
+assert.equal(result.profitFactor, 0.75);
 assert.equal(result.maxDrawdownR, 2);
 
-console.log('signal-backtest 테스트 통과: 동일봉 손절 우선, 거래비용 차감, MDD');
+const quality = dataQuality([
+  { time: 0, open: 10, high: 11, low: 9, close: 10, volume: 1 },
+  { time: 86400 * 2, open: 10, high: 11, low: 9, close: 10, volume: 0 }
+]);
+assert.equal(quality.missingDays, 1);
+assert.equal(quality.invalidOhlc, 0);
+assert.equal(quality.zeroVolume, 1);
+
+const tradesByThreshold = new Map([
+  [0.2, [
+    { signalTime: 1, exitTime: 2, netR: 1, symbol: 'A' },
+    { signalTime: 3, exitTime: 4, netR: 0.5, symbol: 'A' },
+    { signalTime: 6, exitTime: 7, netR: -1, symbol: 'A' }
+  ]],
+  [0.3, [
+    { signalTime: 1, exitTime: 2, netR: 0.1, symbol: 'A' },
+    { signalTime: 6, exitTime: 7, netR: 1, symbol: 'A' }
+  ]]
+]);
+const holdout = chronologicalHoldout(tradesByThreshold, [{ rows: Array.from({ length: 10 }, (_, time) => ({ time })) }], { minimumSample: 1 });
+assert.equal(holdout.threshold, 0.2);
+assert.equal(holdout.test.sample, 1);
+assert.equal(holdout.test.averageR, -1);
+
+console.log('signal-backtest 테스트 통과: 동일봉 손절 우선, 비용, PF, MDD, 데이터 품질, 시간순 홀드아웃');

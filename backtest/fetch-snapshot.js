@@ -11,6 +11,28 @@ function sleep(milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
+function dataQuality(rows) {
+  const daySeconds = 86400;
+  let gaps = 0;
+  let missingDays = 0;
+  let invalidOhlc = 0;
+  let zeroVolume = 0;
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index];
+    if (!(row.low > 0 && row.high >= row.low && row.open >= row.low && row.open <= row.high
+      && row.close >= row.low && row.close <= row.high)) invalidOhlc += 1;
+    if (!(row.volume > 0)) zeroVolume += 1;
+    if (index > 0) {
+      const difference = row.time - rows[index - 1].time;
+      if (difference !== daySeconds) {
+        gaps += 1;
+        if (difference > daySeconds) missingDays += Math.round(difference / daySeconds) - 1;
+      }
+    }
+  }
+  return { gaps, missingDays, invalidOhlc, zeroVolume };
+}
+
 async function fetchJson(url) {
   const response = await fetch(url, { headers: { accept: 'application/json' } });
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${url}`);
@@ -54,7 +76,7 @@ async function fetchSymbol(symbol) {
 async function main() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     fetchedAtUtc: new Date().toISOString(),
     source: config.source,
     timeframe: config.timeframe,
@@ -75,6 +97,7 @@ async function main() {
       symbol, file, bars: rows.length,
       firstTimeUtc: new Date(rows[0].time * 1000).toISOString(),
       lastTimeUtc: new Date(rows.at(-1).time * 1000).toISOString(),
+      quality: dataQuality(rows),
       sha256: crypto.createHash('sha256').update(json).digest('hex')
     });
     console.log(`${rows.length}봉`);
@@ -92,4 +115,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { fetchSymbol };
+module.exports = { fetchSymbol, dataQuality };

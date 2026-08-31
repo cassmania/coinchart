@@ -1733,7 +1733,7 @@ function renderCompositeSignal(signal, fundingRate=0){
   let html=`<span class="sig ${cls}">${icon} ${signal.label}</span>`
     +` <span class="sig neutral" title="각 축은 -1~+1, 네 축은 동일 비중입니다">`
     +`추세 ${signed(a.trend)} · 모멘텀 ${signed(a.momentum)} · 변동성 ${signed(a.volatility)} · 거래량 ${signed(a.volume)}</span>`
-    +` <span class="sig neutral" title="고정 일봉 스냅샷의 워크포워드와 종목 홀드아웃에서 비용 반영 기대값이 0R 이하였습니다">상태표시 전용 · 매매전략 미검증</span>`;
+    +` <span class="sig neutral" title="2026-08-30 이전 확정 일봉의 마지막 40% 홀드아웃 409건: 승률 43.3%, Profit Factor 0.976, 평균 -0.012R">상태표시 전용 · 전략 우위 미확인</span>`;
   // 펀딩비는 방향 점수에 넣지 않고 과열 문맥으로만 보여줍니다.
   if(fundingRate>0.05) html+=' <span class="sig neutral">펀딩비 과열↑(참고)</span>';
   if(fundingRate<-0.05) html+=' <span class="sig neutral">펀딩비 과열↓(참고)</span>';
