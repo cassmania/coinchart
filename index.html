@@ -495,7 +495,6 @@ let v31State = null;
 let v31FuturesCache = new Map();
 let usdtKrwCache = null;
 let usdtDominanceState = null;
-let usdtDominanceSeq = 0;
 let vpvrRenderTimer = null;
 let vpvrMode = 'visible';
 try { if(localStorage.getItem('vpvrMode')==='fixed') vpvrMode='fixed'; } catch(e) {}
@@ -2439,21 +2438,14 @@ async function fetchUsdtKrw() {
   }
 }
 
-/**
- * CoinGecko 공개 원자료로 USDT 도미넌스를 계산합니다.
- *
- * USDT.D는 USDT 가격이나 USDT/KRW 환율이 아니라 시가총액 비중입니다.
- * 따라서 전체 암호화폐 시가총액과 USDT 시가총액을 같은 갱신 주기에 받아
- * USDT 시가총액 ÷ 전체 시가총액 × 100으로 계산합니다.
- */
 function renderUsdtDominance(d) {
   const box=document.getElementById('usdtDominanceBox');
   const updated=document.getElementById('usdtDominanceUpdated');
   if(!box) return;
   if(!d){
     box.dataset.state='데이터 없음';
-    box.innerHTML='<div class="v31-meta">USDT 도미넌스 현재 데이터 확인 불가</div>'
-      +'<div class="v31-line v31-missing">CoinGecko 공개 API 응답을 확인하지 못했습니다. 다른 코인 분석은 계속 표시합니다.</div>';
+    box.innerHTML='<div class="v31-meta">USDT 도미넌스 수치 확인 불가</div>'
+      +'<div class="v31-line v31-missing">정적 페이지에서 검증 가능한 CORS 원자료가 없어 값을 추정하지 않습니다. TradingView USDT.D 시계열 차트로 확인하세요.</div>';
     if(updated) updated.textContent='확인 불가';
     return;
   }
@@ -2468,33 +2460,12 @@ function renderUsdtDominance(d) {
   if(updated) updated.textContent=`${value.toFixed(3)}% · ${kstTime(d.fetchedAt,false)}`;
 }
 
-async function loadUsdtDominance() {
-  const seq=++usdtDominanceSeq;
-  try{
-    const [globalData,tetherData]=await Promise.all([
-      fetchJson('https://api.coingecko.com/api/v3/global'),
-      fetchJson('https://api.coingecko.com/api/v3/simple/price?ids=tether&vs_currencies=usd&include_market_cap=true')
-    ]);
-    const total=Number(globalData?.data?.total_market_cap?.usd);
-    const usdt=Number(tetherData?.tether?.usd_market_cap);
-    if(!(total>0)||!(usdt>0)) throw new Error('시가총액 원자료 부족');
-    const result={
-      value:usdt/total*100,
-      totalMarketCap:total,
-      usdtMarketCap:usdt,
-      fetchedAt:Date.now(),
-      source:'CoinGecko /global + /simple/price'
-    };
-    if(seq!==usdtDominanceSeq) return;
-    usdtDominanceState=result;
-    renderUsdtDominance(result);
-    if(v31State) renderV31Analysis(v31State.symbol,v31State.exchange,v31State.entries,v31State.fx,v31State.futures);
-  }catch(error){
-    if(seq!==usdtDominanceSeq) return;
-    usdtDominanceState=null;
-    renderUsdtDominance(null);
-    console.warn('USDT 도미넌스 조회 실패:',error.message);
-  }
+function loadUsdtDominance() {
+  // GitHub Pages에서 CoinGecko 직접 호출은 CORS로 차단됩니다.
+  // 실패 요청이나 추정값 대신 수치 미제공 상태를 명시하고, 시계열은 TradingView 차트로 분리합니다.
+  usdtDominanceState=null;
+  renderUsdtDominance(null);
+  if(v31State) renderV31Analysis(v31State.symbol,v31State.exchange,v31State.entries,v31State.fx,v31State.futures);
 }
 
 function v31Price(price, fx, digits=null) {
