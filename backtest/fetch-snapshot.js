@@ -19,9 +19,10 @@ function dataQuality(rows) {
   let zeroVolume = 0;
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index];
-    if (!(row.low > 0 && row.high >= row.low && row.open >= row.low && row.open <= row.high
+    if (![row.time, row.open, row.high, row.low, row.close].every(Number.isFinite)
+      || !(row.low > 0 && row.high >= row.low && row.open >= row.low && row.open <= row.high
       && row.close >= row.low && row.close <= row.high)) invalidOhlc += 1;
-    if (!(row.volume > 0)) zeroVolume += 1;
+    if (!Number.isFinite(row.volume) || !(row.volume > 0)) zeroVolume += 1;
     if (index > 0) {
       const difference = row.time - rows[index - 1].time;
       if (difference !== daySeconds) {

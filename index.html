@@ -6,7 +6,8 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><text y=%2252%22 font-size=%2252%22>📈</text></svg>">
 <title>제미나이 차트</title>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
-<script src="./analysis-engine.js"></script>
+<script src="./analysis-engine.js?v=20260905"></script>
+<script src="./backtest/results/summary.js?v=20260905"></script>
 <script src="./v3-analysis.js"></script>
 <script src="./v41-analysis.js"></script>
 <style>
@@ -1729,10 +1730,17 @@ function renderCompositeSignal(signal, fundingRate=0){
   const icon=signal.direction==='LONG_BIAS'?'🟢':signal.direction==='SHORT_BIAS'?'🔴':'⚪';
   const signed=value=>(value>=0?'+':'')+value.toFixed(2);
   const a=signal.axes;
+  const audit=window.COINCHART_BACKTEST;
+  const auditNumber=(value,digits=3)=>Number.isFinite(value)?value.toFixed(digits):'산출 불가';
+  // 이 전략은 Bybit 일봉만 평가했다. 차트 시간봉과 무관하게 검증 대상을 명시한다.
+  const auditTitle=audit
+    ? `Bybit USDT 무기한 일봉 · 최근 ${audit.window}확정봉 · ${audit.endExclusiveUtc.slice(0,10)} UTC 미만 · 홀드아웃 ${audit.sample}건 · 승률 ${auditNumber(audit.winRate===null?null:audit.winRate*100,1)}% · PF ${auditNumber(audit.profitFactor)} · 평균 ${auditNumber(audit.averageR)}R · 최대낙폭 ${auditNumber(audit.maxDrawdownR)}R · 진입 임계값 ${audit.threshold} · 펀딩 미포함`
+    : '백테스트 요약을 불러오지 못했습니다';
+  const auditText=audit ? `일봉 검증 ${audit.sample}건 · PF ${auditNumber(audit.profitFactor)} · ${audit.verdict}` : '검증 결과 확인 불가';
   let html=`<span class="sig ${cls}">${icon} ${signal.label}</span>`
     +` <span class="sig neutral" title="각 축은 -1~+1, 네 축은 동일 비중입니다">`
     +`추세 ${signed(a.trend)} · 모멘텀 ${signed(a.momentum)} · 변동성 ${signed(a.volatility)} · 거래량 ${signed(a.volume)}</span>`
-    +` <span class="sig neutral" title="2026-08-30 이전 확정 일봉의 마지막 40% 홀드아웃 409건: 승률 43.3%, Profit Factor 0.976, 평균 -0.012R">상태표시 전용 · 전략 우위 미확인</span>`;
+    +` <a class="sig neutral" href="./backtest/results/signal-report.md" target="_blank" rel="noopener" title="${auditTitle}">${auditText}</a>`;
   // 펀딩비는 방향 점수에 넣지 않고 과열 문맥으로만 보여줍니다.
   if(fundingRate>0.05) html+=' <span class="sig neutral">펀딩비 과열↑(참고)</span>';
   if(fundingRate<-0.05) html+=' <span class="sig neutral">펀딩비 과열↓(참고)</span>';

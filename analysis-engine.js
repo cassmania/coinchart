@@ -4,6 +4,8 @@
   root.CoinAnalysis = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  // 거래소 기본 500봉 응답에서 진행 봉을 뺀 분석 창을 화면·백테스트가 공유한다.
+  const COMPOSITE_WINDOW = 499;
 
   const TF_SECONDS = Object.freeze({
     '1m': 60,
@@ -497,7 +499,7 @@
    * 현재 확정봉에서 관찰되는 방향 우위(-1~+1)입니다.
    */
   function compositeSignal(rows) {
-    const source = Array.isArray(rows) ? rows : [];
+    const source = Array.isArray(rows) ? rows.slice(-COMPOSITE_WINDOW) : [];
     // 월봉처럼 상장 이력이 짧은 구간도 최소 60봉부터 계산하되,
     // MA200은 실제 200봉이 있을 때만 추세축에 추가합니다.
     const requiredBars = 60;
@@ -526,7 +528,9 @@
     const macdResult = macd(closes, 12, 26, 9);
     const macdHistogram = lastFinite(macdResult.histogram);
     const supertrendDirection = lastFinite(supertrend(source, 10, 3).direction);
-    const deviation20 = lastFinite(standardDeviation(closes, 20));
+    // 합성 점수에는 마지막 표준편차만 필요하므로 끝의 20봉만 계산한다.
+    // 전체 시계열 함수를 그대로 재사용해 수식과 연산 순서를 유지한다.
+    const deviation20 = lastFinite(standardDeviation(closes.slice(-20), 20));
 
     if (![lastClose, atrNow, ema20, sma20, sma60, rsiNow, macdHistogram, deviation20]
       .every(finiteNumber) || !(atrNow > 0)) {
@@ -637,6 +641,7 @@
   }
 
   return Object.freeze({
+    COMPOSITE_WINDOW,
     TF_SECONDS,
     finiteNumber,
     lastFinite,

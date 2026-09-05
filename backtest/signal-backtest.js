@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const A = require('../analysis-engine.js');
 const config = require('./config.js');
+const crypto = require('node:crypto');
+const { dataQuality } = require('./fetch-snapshot.js');
 
 const DATA_DIR = path.join(__dirname, 'data');
 const RESULT_DIR = path.join(__dirname, 'results');
@@ -14,10 +16,19 @@ function loadData() {
     throw new Error('고정 데이터가 없습니다. 먼저 node backtest/fetch-snapshot.js 를 실행하세요.');
   }
   const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-  const sets = manifest.files.map(item => ({
-    symbol: item.symbol,
-    rows: JSON.parse(fs.readFileSync(path.join(DATA_DIR, item.file), 'utf8'))
-  }));
+  const sets = manifest.files.map(item => {
+    const raw = fs.readFileSync(path.join(DATA_DIR, item.file), 'utf8');
+    if (crypto.createHash('sha256').update(raw).digest('hex') !== item.sha256) {
+      throw new Error(`${item.symbol}: 스냅샷 해시 불일치`);
+    }
+    const rows = JSON.parse(raw);
+    const quality = dataQuality(rows);
+    if (rows.length !== item.bars || Object.values(quality).some(value => value !== 0)
+      || rows.some(row => !Number.isFinite(row.time) || row.time + 86400 > Date.parse(manifest.requestedRange.endExclusiveUtc) / 1000)) {
+      throw new Error(`${item.symbol}: 데이터 품질 또는 확정봉 검사 실패`);
+    }
+    return { symbol: item.symbol, rows };
+  });
   return { manifest, sets };
 }
 
@@ -27,7 +38,7 @@ function fillPrice(rawPrice, direction, side, slippageRate) {
   return rawPrice * (isBuy ? 1 + slippageRate : 1 - slippageRate);
 }
 
-function resolveTrade(rows, entryIndex, direction, atrAtSignal, settings = config) {
+function resolveTrade(rows, entryIndex, direction, atrAtSignal, settings = config, endExclusive = rows.length) {
   const entryCandle = rows[entryIndex];
   if (!entryCandle || !(atrAtSignal > 0)) return null;
   const entry = fillPrice(entryCandle.open, direction, 'ENTRY', settings.slippageRatePerSide);
@@ -35,10 +46,11 @@ function resolveTrade(rows, entryIndex, direction, atrAtSignal, settings = confi
   const isLong = direction === 'LONG';
   const stop = isLong ? entry - risk : entry + risk;
   const target = isLong ? entry + risk * settings.targetR : entry - risk * settings.targetR;
-  const lastIndex = Math.min(rows.length - 1, entryIndex + settings.maxHoldBars - 1);
+  const lastIndex = Math.min(rows.length - 1, endExclusive - 1, entryIndex + settings.maxHoldBars - 1);
+  if (lastIndex < entryIndex) return null;
   let exitIndex = lastIndex;
   let rawExit = rows[lastIndex].close;
-  let outcome = 'TIME';
+  let outcome = lastIndex < entryIndex + settings.maxHoldBars - 1 ? 'BOUNDARY' : 'TIME';
 
   for (let index = entryIndex; index <= lastIndex; index += 1) {
     const candle = rows[index];
@@ -47,7 +59,8 @@ function resolveTrade(rows, entryIndex, direction, atrAtSignal, settings = confi
     if (stopHit) {
       // 같은 봉에서 둘 다 닿은 경우 봉 내부 순서를 알 수 없으므로 손절을 우선합니다.
       exitIndex = index;
-      rawExit = stop;
+      // 손절가를 건너뛰어 시작하면 도달 불가능한 손절가 대신 불리한 시가를 적용한다.
+      rawExit = isLong ? Math.min(stop, candle.open) : Math.max(stop, candle.open);
       outcome = 'STOP';
       break;
     }
@@ -70,13 +83,25 @@ function resolveTrade(rows, entryIndex, direction, atrAtSignal, settings = confi
   };
 }
 
-function simulateSymbol(symbol, rows, threshold, settings = config) {
+// 동일 스냅샷의 확정 시점별 신호는 임계값과 검증 구간에 독립적이다.
+// 한 번 계산한 과거 접두 구간 결과만 재사용하며 미래 봉은 입력하지 않는다.
+const signalCache = new WeakMap();
+function signalAt(rows, index) {
+  if (!signalCache.has(rows)) signalCache.set(rows, new Map());
+  const cache = signalCache.get(rows);
+  if (!cache.has(index)) cache.set(index, A.compositeSignal(rows.slice(0, index + 1)));
+  return cache.get(index);
+}
+
+function simulateSymbol(symbol, rows, threshold, settings = config, period = {}) {
   const trades = [];
   let previousRegime = 'WAIT';
+  const boundary = period.endTime === undefined ? -1 : rows.findIndex(row => row.time >= period.endTime);
+  const endExclusive = boundary < 0 ? rows.length : boundary;
 
-  for (let decisionIndex = settings.warmupBars - 1; decisionIndex < rows.length - 1; decisionIndex += 1) {
-    const history = rows.slice(0, decisionIndex + 1);
-    const signal = A.compositeSignal(history);
+  for (let decisionIndex = settings.warmupBars - 1; decisionIndex < endExclusive - 1; decisionIndex += 1) {
+    if (period.startTime !== undefined && rows[decisionIndex].time < period.startTime) continue;
+    const signal = signalAt(rows, decisionIndex);
     if (!signal.ready) continue;
     const regime = signal.score >= threshold ? 'LONG'
       : signal.score <= -threshold ? 'SHORT'
@@ -89,7 +114,7 @@ function simulateSymbol(symbol, rows, threshold, settings = config) {
     if (regime === previousRegime) continue;
     previousRegime = regime;
 
-    const trade = resolveTrade(rows, decisionIndex + 1, regime, signal.diagnostics.atr, settings);
+    const trade = resolveTrade(rows, decisionIndex + 1, regime, signal.diagnostics.atr, settings, endExclusive);
     if (!trade) continue;
     trades.push({
       ...trade,
@@ -103,6 +128,15 @@ function simulateSymbol(symbol, rows, threshold, settings = config) {
     decisionIndex = trade.exitIndex;
   }
   return trades;
+}
+
+function periodTrades(sets, threshold, period, settings) {
+  return sets.flatMap(set => simulateSymbol(set.symbol, set.rows, threshold, settings, period));
+}
+
+function trainThresholds(thresholds, sets, endTime, settings) {
+  return new Map([...thresholds.keys()].map(threshold => [threshold,
+    periodTrades(sets, threshold, { endTime }, settings)]));
 }
 
 function metrics(trades, minimumSample = config.minimumSample) {
@@ -142,13 +176,12 @@ function chronologicalHoldout(tradesByThreshold, sets, settings = config) {
   const splitTime = times[Math.floor(times.length * 0.6)];
   if (!splitTime) return { status: '분할 시각 산출 불가' };
   const selected = chooseThreshold(
-    tradesByThreshold,
-    trade => trade.exitTime < splitTime,
+    trainThresholds(tradesByThreshold, sets, splitTime, settings),
+    () => true,
     settings.minimumSample
   );
   if (!selected) return { splitTime, status: '학습 표본 부족' };
-  const testTrades = tradesByThreshold.get(selected.threshold)
-    .filter(trade => trade.signalTime >= splitTime);
+  const testTrades = periodTrades(sets, selected.threshold, { startTime: splitTime }, settings);
   return {
     splitTime,
     splitTimeUtc: new Date(splitTime * 1000).toISOString(),
@@ -177,19 +210,20 @@ function walkForward(tradesByThreshold, sets, settings = config) {
 
   for (let fold = 0; fold < settings.walkForwardFolds; fold += 1) {
     const trainEnd = uniqueTimes[startIndex + fold * step];
-    const testEnd = uniqueTimes[Math.min(uniqueTimes.length - 1, startIndex + (fold + 1) * step)];
+    const testEnd = fold === settings.walkForwardFolds - 1
+      ? uniqueTimes.at(-1) + 86400
+      : uniqueTimes[startIndex + (fold + 1) * step];
     if (!trainEnd || !testEnd || testEnd <= trainEnd) continue;
     const selected = chooseThreshold(
-      tradesByThreshold,
-      trade => trade.exitTime < trainEnd,
+      trainThresholds(tradesByThreshold, sets, trainEnd, settings),
+      () => true,
       settings.minimumSample
     );
     if (!selected) {
       folds.push({ fold: fold + 1, trainEnd, testEnd, status: '학습 표본 부족' });
       continue;
     }
-    const testTrades = tradesByThreshold.get(selected.threshold)
-      .filter(trade => trade.signalTime >= trainEnd && trade.exitTime < testEnd);
+    const testTrades = periodTrades(sets, selected.threshold, { startTime: trainEnd, endTime: testEnd }, settings);
     combined = combined.concat(testTrades);
     folds.push({
       fold: fold + 1,
@@ -249,11 +283,12 @@ function markdownReport(report) {
     `- 판정: **${report.verdict}**`,
     '- 양의 성과 판정 조건: 시간순 마지막 40% 홀드아웃에서 최소 표본, 평균 기대값 0R 초과, Profit Factor 1 초과를 모두 충족해야 함', '',
     '## 체결 가정', '',
-    `- 신호: 일봉 확정 종가에서 계산, 미래 봉 미사용`,
+    `- 신호: 최근 ${report.assumptions.warmupBars}개 확정 일봉 종가에서 계산, 화면과 같은 분석 창 사용`,
     `- 진입: 다음 일봉 시가`,
     `- 손절: ${report.assumptions.stopAtr} ATR, 목표: ${report.assumptions.targetR}R, 최대 보유: ${report.assumptions.maxHoldBars}봉`,
     `- 수수료: 편도 ${(report.assumptions.feeRatePerSide * 100).toFixed(3)}%, 슬리피지: 편도 ${(report.assumptions.slippageRatePerSide * 100).toFixed(3)}%`,
-    `- 동일 봉 손절·익절 동시 도달: 손절 우선`, '',
+    `- 동일 봉 손절·익절 동시 도달: 손절 우선, 손절가를 건너뛴 갭은 불리한 시가 체결`,
+    '- 학습·검증 구간은 포지션 없이 독립 시작하며, 경계에 남은 포지션은 마지막 봉 종가 청산', '',
     '## 워크포워드 아웃샘플', '',
     `- 표본: ${report.walkForward.combined.sample} (${report.walkForward.combined.status})`,
     `- 승률: ${percent(report.walkForward.combined.winRate)}`,
@@ -267,6 +302,7 @@ function markdownReport(report) {
     `- 승률: ${percent(report.chronologicalHoldout.test?.winRate ?? null)}`,
     `- 평균 기대값: ${number(report.chronologicalHoldout.test?.averageR ?? null, 'R')}`,
     `- Profit Factor: ${number(report.chronologicalHoldout.test?.profitFactor ?? null)}`,
+    `- 누적 손익: ${number(report.chronologicalHoldout.test?.totalR ?? null, 'R')}`,
     `- 최대 낙폭: ${number(report.chronologicalHoldout.test?.maxDrawdownR ?? null, 'R')}`, '',
     '## 종목 홀드아웃', '',
     `- 표본: ${report.symbolHoldout.combined.sample} (${report.symbolHoldout.combined.status})`,
@@ -281,7 +317,11 @@ function markdownReport(report) {
     '## 해석 제한', '',
     '- 이 결과는 고정 스냅샷과 명시된 비용 가정에만 해당합니다.',
     '- 표본 충족은 수익 보장이나 통계적 유의성을 뜻하지 않습니다.',
-    '- 펀딩비, 시장 충격, 호가 공백, 주문 거절은 모델에 포함되지 않았습니다.'
+    '- 펀딩비, 시장 충격, 부분 체결, 주문 거절은 모델에 포함되지 않았습니다.',
+    '- MDD는 거래 청산 시점의 누적 R 낙폭이며 미실현 손익·레버리지·자본 배분을 반영한 계좌 낙폭이 아닙니다.',
+    '- 일봉 4축 합성 점수 전략만 검증했습니다. 파동 탐지·지지저항 성공률·다른 시간봉의 적중률은 이 결과로 판단하지 않습니다.',
+    '- 종목 홀드아웃은 전 기간의 다른 종목을 학습하므로 시간순 미래 예측 검증과 다릅니다.',
+    '- 이전에 평가한 자료를 포함한 재검증이며 완전히 새로운 미관측 표본은 아닙니다.'
   ];
   return `${lines.join('\n')}\n`;
 }
@@ -305,7 +345,7 @@ function main() {
     ? '양의 성과 관찰'
     : '전략 우위 미확인';
   const report = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAtUtc: new Date().toISOString(),
     engine: 'analysis-engine.js / compositeSignal',
     data: manifest,
@@ -317,6 +357,8 @@ function main() {
       feeRatePerSide: config.feeRatePerSide,
       slippageRatePerSide: config.slippageRatePerSide,
       sameBarPriority: 'STOP',
+      stopGap: 'ADVERSE_OPEN',
+      periodBoundary: 'FLAT_START_CLOSE_AT_END',
       entryTiming: 'NEXT_BAR_OPEN',
       minimumSample: config.minimumSample,
       thresholdCandidates: config.thresholdCandidates
@@ -331,6 +373,13 @@ function main() {
   fs.mkdirSync(RESULT_DIR, { recursive: true });
   fs.writeFileSync(path.join(RESULT_DIR, 'signal-report.json'), JSON.stringify(report, null, 2));
   fs.writeFileSync(path.join(RESULT_DIR, 'signal-report.md'), markdownReport(report));
+  // 공개 화면은 이 요약을 직접 사용해 보고서와 표시 수치의 수동 복사 불일치를 방지한다.
+  const summary = { generatedAtUtc: report.generatedAtUtc, source: manifest.source, timeframe: manifest.timeframe,
+    endExclusiveUtc: manifest.requestedRange.endExclusiveUtc, window: config.warmupBars,
+    verdict, threshold: chronologicalResult.threshold, ...primary };
+  fs.writeFileSync(path.join(RESULT_DIR, 'summary.js'),
+    '/* 백테스트 실행 시 보고서와 함께 자동 생성되는 공개 요약입니다. */\n'
+    + 'globalThis.COINCHART_BACKTEST = Object.freeze(' + JSON.stringify(summary) + ');\n');
   console.log(`워크포워드: ${walkForwardResult.combined.sample}건 · ${number(walkForwardResult.combined.averageR, 'R')}`);
   console.log(`시간순 홀드아웃: ${chronologicalResult.test?.sample || 0}건 · ${number(chronologicalResult.test?.averageR ?? null, 'R')} · ${verdict}`);
   console.log(`종목 홀드아웃: ${holdoutResult.combined.sample}건 · ${number(holdoutResult.combined.averageR, 'R')}`);
@@ -338,4 +387,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { fillPrice, resolveTrade, simulateSymbol, metrics, chooseThreshold, chronologicalHoldout, walkForward, symbolHoldout };
+module.exports = { loadData, fillPrice, resolveTrade, simulateSymbol, metrics, chooseThreshold, chronologicalHoldout, walkForward, symbolHoldout };

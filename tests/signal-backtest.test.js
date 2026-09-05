@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
-const { resolveTrade, metrics, chronologicalHoldout } = require('../backtest/signal-backtest.js');
+const { resolveTrade, simulateSymbol, metrics, chooseThreshold, chronologicalHoldout, walkForward } = require('../backtest/signal-backtest.js');
 const { dataQuality } = require('../backtest/fetch-snapshot.js');
 
 const settings = {
@@ -42,6 +42,8 @@ const quality = dataQuality([
 assert.equal(quality.missingDays, 1);
 assert.equal(quality.invalidOhlc, 0);
 assert.equal(quality.zeroVolume, 1);
+assert.equal(dataQuality([{ time: 0, open: 10, high: Infinity, low: 9, close: 10, volume: 1 }]).invalidOhlc, 1);
+assert.equal(dataQuality([{ time: 0, open: 10, high: 11, low: 9, close: 10, volume: Infinity }]).zeroVolume, 1);
 
 const tradesByThreshold = new Map([
   [0.2, [
@@ -54,9 +56,39 @@ const tradesByThreshold = new Map([
     { signalTime: 6, exitTime: 7, netR: 1, symbol: 'A' }
   ]]
 ]);
-const holdout = chronologicalHoldout(tradesByThreshold, [{ rows: Array.from({ length: 10 }, (_, time) => ({ time })) }], { minimumSample: 1 });
-assert.equal(holdout.threshold, 0.2);
-assert.equal(holdout.test.sample, 1);
-assert.equal(holdout.test.averageR, -1);
+const selected = chooseThreshold(tradesByThreshold, trade => trade.exitTime < 6, 1);
+assert.equal(selected.threshold, 0.2);
+
+// 손절가보다 불리한 시가에서는 손실을 -1R로 잘라서는 안 된다.
+const gapRows = [
+  { time: 0, open: 100, high: 100.5, low: 99.5, close: 100, volume: 1 },
+  { time: 86400, open: 95, high: 96, low: 94, close: 95, volume: 1 }
+];
+assert.equal(resolveTrade(gapRows, 0, 'LONG', 1, settings).netR, -5);
+const shortGap = gapRows.map((row, i) => i === 0 ? row : { ...row, open: 105, high: 106, low: 104, close: 105 });
+assert.equal(resolveTrade(shortGap, 0, 'SHORT', 1, settings).netR, -5);
+const bounded = resolveTrade(gapRows, 0, 'LONG', 1, settings, 1);
+assert.equal(bounded.outcome, 'BOUNDARY');
+assert.equal(bounded.exitIndex, 0);
+assert.equal(bounded.netR, 0);
+
+// 실제 합성 신호를 사용해 검증 구간의 독립 실행과 미래 꼬리 변경 불변성을 검증한다.
+const rows = Array.from({ length: 600 }, (_, i) => {
+  const open = 200 + i * 0.08 + 12 * Math.sin(i / 11);
+  return { time: i * 86400, open, high: open + 3, low: open - 3, close: open + Math.cos(i / 4), volume: 100 + i % 13 };
+});
+const conf = { ...settings, warmupBars: 60, minimumSample: 1, walkForwardFolds: 5 };
+const sets = [{ symbol: 'A', rows }];
+const all = new Map([0.2, 0.3].map(threshold => [threshold, simulateSymbol('A', rows, threshold, conf)]));
+const holdout = chronologicalHoldout(all, sets, conf);
+assert.ok(holdout.test.sample > 0);
+assert.deepEqual(holdout.test, metrics(simulateSymbol('A', rows, holdout.threshold, conf, { startTime: holdout.splitTime }), 1));
+const endTime = rows[400].time;
+const originalPeriod = simulateSymbol('A', rows, 0.2, conf, { startTime: rows[300].time, endTime });
+const changed = rows.map((r, i) => i < 400 ? r : { ...r, open: 9999, high: 10000, low: 9998, close: 9999 });
+assert.deepEqual(simulateSymbol('A', changed, 0.2, conf, { startTime: rows[300].time, endTime }), originalPeriod);
+assert.ok(originalPeriod.every(t => t.entryIndex > 300 && t.exitIndex < 400));
+const wf = walkForward(all, sets, conf);
+assert.equal(wf.folds.at(-1).testEndUtc, new Date((rows.at(-1).time + 86400) * 1000).toISOString());
 
 console.log('signal-backtest 테스트 통과: 동일봉 손절 우선, 비용, PF, MDD, 데이터 품질, 시간순 홀드아웃');

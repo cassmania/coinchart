@@ -1,152 +1,152 @@
 {
   "schemaVersion": 2,
-  "fetchedAtUtc": "2026-08-30T23:13:02.885Z",
+  "fetchedAtUtc": "2026-09-05T00:30:59.912Z",
   "source": "Bybit public API / v5 market kline / linear perpetual",
   "timeframe": "1d",
   "requestedRange": {
     "startUtc": "2019-01-01T00:00:00.000Z",
-    "endExclusiveUtc": "2026-08-30T00:00:00.000Z"
+    "endExclusiveUtc": "2026-09-05T00:00:00.000Z"
   },
   "files": [
     {
       "symbol": "BTCUSDT",
       "file": "BTCUSDT_1d.json",
-      "bars": 2349,
+      "bars": 2355,
       "firstTimeUtc": "2020-03-25T00:00:00.000Z",
-      "lastTimeUtc": "2026-08-29T00:00:00.000Z",
+      "lastTimeUtc": "2026-09-04T00:00:00.000Z",
       "quality": {
         "gaps": 0,
         "missingDays": 0,
         "invalidOhlc": 0,
         "zeroVolume": 0
       },
-      "sha256": "fcbd1e30a2148d9b08e358de9a7aa5592b5d8f39890229612e9a74c3fc8596ef"
+      "sha256": "41325e5b7e2dd43c5990ecefce24ca4de08f0398d926d1519ae5e1406946d7ef"
     },
     {
       "symbol": "ETHUSDT",
       "file": "ETHUSDT_1d.json",
-      "bars": 1994,
+      "bars": 2000,
       "firstTimeUtc": "2021-03-15T00:00:00.000Z",
-      "lastTimeUtc": "2026-08-29T00:00:00.000Z",
+      "lastTimeUtc": "2026-09-04T00:00:00.000Z",
       "quality": {
         "gaps": 0,
         "missingDays": 0,
         "invalidOhlc": 0,
         "zeroVolume": 0
       },
-      "sha256": "543aea00f07d5ef87ba378b9d1e0a4414acfe9532fb923a4b5529973e28ad907"
+      "sha256": "bd14c16e93b68f78aef541b573c854ae7f678e9dbb799d3fce71ecc7d1a3dd66"
     },
     {
       "symbol": "BNBUSDT",
       "file": "BNBUSDT_1d.json",
-      "bars": 1888,
+      "bars": 1894,
       "firstTimeUtc": "2021-06-29T00:00:00.000Z",
-      "lastTimeUtc": "2026-08-29T00:00:00.000Z",
+      "lastTimeUtc": "2026-09-04T00:00:00.000Z",
       "quality": {
         "gaps": 0,
         "missingDays": 0,
         "invalidOhlc": 0,
         "zeroVolume": 0
       },
-      "sha256": "46a020e56526e054b9e3f3fefd9a1463faff9d8a8f0b16233121bc562e9bd5b9"
+      "sha256": "b869cf4f18a2fa0806a37580bbe13db947987f5de2f725fa2e5be34100d8adad"
     },
     {
       "symbol": "XRPUSDT",
       "file": "XRPUSDT_1d.json",
-      "bars": 1935,
+      "bars": 1941,
       "firstTimeUtc": "2021-05-13T00:00:00.000Z",
-      "lastTimeUtc": "2026-08-29T00:00:00.000Z",
+      "lastTimeUtc": "2026-09-04T00:00:00.000Z",
       "quality": {
         "gaps": 0,
         "missingDays": 0,
         "invalidOhlc": 0,
         "zeroVolume": 0
       },
-      "sha256": "46e1136d4596a845429315a39790257a0a1d57a019a0a55b1db30d484e778e12"
+      "sha256": "2d77e3c1ecef8f72a18d8e870b8dd0a0ed976b9c439d03c6f8b61d954a944d06"
     },
     {
       "symbol": "SOLUSDT",
       "file": "SOLUSDT_1d.json",
-      "bars": 1780,
+      "bars": 1786,
       "firstTimeUtc": "2021-10-15T00:00:00.000Z",
-      "lastTimeUtc": "2026-08-29T00:00:00.000Z",
+      "lastTimeUtc": "2026-09-04T00:00:00.000Z",
       "quality": {
         "gaps": 0,
         "missingDays": 0,
         "invalidOhlc": 0,
         "zeroVolume": 0
       },
-      "sha256": "bcf5c7452574ad7a88df6ca38d8af59e26479cb8ceba5920822ce4989cdce925"
+      "sha256": "635c58fed0b9a939f6cbbe48c6ad6ff4616fff5c2ef077d1afdfe52f06c999ff"
     },
     {
       "symbol": "ADAUSDT",
       "file": "ADAUSDT_1d.json",
-      "bars": 1991,
+      "bars": 1997,
       "firstTimeUtc": "2021-03-18T00:00:00.000Z",
-      "lastTimeUtc": "2026-08-29T00:00:00.000Z",
+      "lastTimeUtc": "2026-09-04T00:00:00.000Z",
       "quality": {
         "gaps": 0,
         "missingDays": 0,
         "invalidOhlc": 0,
         "zeroVolume": 0
       },
-      "sha256": "630200029e16f556d15eb3fe3d1bb5d8bc13220be94ac21c82f1066ca8bc4773"
+      "sha256": "92d379ccc69363d192157e446bdd8c5fb6acf5ad35a5746279da1e175218c2b5"
     },
     {
       "symbol": "DOGEUSDT",
       "file": "DOGEUSDT_1d.json",
-      "bars": 1915,
+      "bars": 1921,
       "firstTimeUtc": "2021-06-02T00:00:00.000Z",
-      "lastTimeUtc": "2026-08-29T00:00:00.000Z",
+      "lastTimeUtc": "2026-09-04T00:00:00.000Z",
       "quality": {
         "gaps": 0,
         "missingDays": 0,
         "invalidOhlc": 0,
         "zeroVolume": 0
       },
-      "sha256": "7ecdca5b62132e98e1ee7a2d489f0caaaf699d432ba17b8b7d52fea6aa8d5a44"
+      "sha256": "3b80ca0d99092823326d0d55d62a14b0db9199f3d59380d3401b7550cb980687"
     },
     {
       "symbol": "LINKUSDT",
       "file": "LINKUSDT_1d.json",
-      "bars": 2139,
+      "bars": 2145,
       "firstTimeUtc": "2020-10-21T00:00:00.000Z",
-      "lastTimeUtc": "2026-08-29T00:00:00.000Z",
+      "lastTimeUtc": "2026-09-04T00:00:00.000Z",
       "quality": {
         "gaps": 0,
         "missingDays": 0,
         "invalidOhlc": 0,
         "zeroVolume": 0
       },
-      "sha256": "0ecf89933041eef96d9869edc007e35df830e13f35b6be5e9e9692aae7783214"
+      "sha256": "c6a6a9069c3af2eb83ac4ed2fd433abaa2778c75f75a9bb4365b4f6ff6ddda05"
     },
     {
       "symbol": "LTCUSDT",
       "file": "LTCUSDT_1d.json",
-      "bars": 2139,
+      "bars": 2145,
       "firstTimeUtc": "2020-10-21T00:00:00.000Z",
-      "lastTimeUtc": "2026-08-29T00:00:00.000Z",
+      "lastTimeUtc": "2026-09-04T00:00:00.000Z",
       "quality": {
         "gaps": 0,
         "missingDays": 0,
         "invalidOhlc": 0,
         "zeroVolume": 0
       },
-      "sha256": "d6332bcb8be4fa47aef97547b37f96b06c348503c92f00e02d98650e54a32806"
+      "sha256": "2382dfed2d1986303a51d95690d91e3a478c2e2ff7fe07960bb6adfcae4b2f30"
     },
     {
       "symbol": "AVAXUSDT",
       "file": "AVAXUSDT_1d.json",
-      "bars": 1810,
+      "bars": 1816,
       "firstTimeUtc": "2021-09-15T00:00:00.000Z",
-      "lastTimeUtc": "2026-08-29T00:00:00.000Z",
+      "lastTimeUtc": "2026-09-04T00:00:00.000Z",
       "quality": {
         "gaps": 0,
         "missingDays": 0,
         "invalidOhlc": 0,
         "zeroVolume": 0
       },
-      "sha256": "b20b09e5b40ec329c9b8498536dd2d362306ec07d829cdf4b761b1173df51839"
+      "sha256": "0ad6cde13c0b820c31ccf1259cba3119d1c23caeb1b7ee34a3878d82f84bb23c"
     }
   ]
 }

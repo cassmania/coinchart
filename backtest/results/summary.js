@@ -1,0 +1,2 @@
+/* 백테스트 실행 시 보고서와 함께 자동 생성되는 공개 요약입니다. */
+globalThis.COINCHART_BACKTEST = Object.freeze({"generatedAtUtc":"2026-09-05T00:34:08.822Z","source":"Bybit public API / v5 market kline / linear perpetual","timeframe":"1d","endExclusiveUtc":"2026-09-05T00:00:00.000Z","window":499,"verdict":"전략 우위 미확인","threshold":0.3,"sample":496,"status":"검증 표본 충족","winRate":0.4032258064516129,"averageR":-0.02964912149498347,"profitFactor":0.9399082427485387,"totalR":-14.705964261511802,"maxDrawdownR":61.01797224386804});

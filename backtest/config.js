@@ -12,7 +12,7 @@ module.exports = Object.freeze({
     'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'SOLUSDT',
     'ADAUSDT', 'DOGEUSDT', 'LINKUSDT', 'LTCUSDT', 'AVAXUSDT'
   ],
-  warmupBars: 240,
+  warmupBars: require('../analysis-engine.js').COMPOSITE_WINDOW,
   maxHoldBars: 20,
   stopAtr: 2,
   targetR: 1.5,
