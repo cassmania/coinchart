@@ -972,7 +972,12 @@ function doMACD(f=12,s=26,sg=9, rows=getSignalRows()) {
   const lm=ml.at(-1);
   if (selectedPanelIdx === 1) {
     const me=document.getElementById('vMACD');
-    me.textContent=lm?lm.toFixed(4):'--'; me.style.color=lm>0?'#0ecb81':'#f6465d';
+    me.textContent=lm?lm.toFixed(4):'--';
+    // 색은 MACD선 위치가 아니라 히스토그램(모멘텀 방향) 기준. 값은 그대로 둔다.
+    const lh=hist.filter(v=>v!=null).at(-1), ph=hist.filter(v=>v!=null).at(-2);
+    me.style.color=lh!=null?(lh>0?'#0ecb81':'#f6465d'):(lm>0?'#0ecb81':'#f6465d');
+    me.dataset.hist=lh!=null?lh:'';
+    me.title=lh!=null?('MACD 히스토그램 '+(lh>=0?'+':'')+lh.toFixed(4)+(ph!=null?(lh>=ph?' · 확장 중':' · 축소 중'):'')):'';
   }
   document.getElementById('lMACD').textContent = (lm!=null && !isNaN(lm)) ? lm.toFixed(4) : '--';
 }
@@ -1365,6 +1370,28 @@ function waveAnalyze(rows){
     invalid:P[0]};
 }
 
+// RSI 다이버전스 실검출: 마지막 두 고점(저점)의 가격 vs 그 시점 RSI를 직접 비교한다.
+// v31 패널의 다이버전스와 같은 규칙(가격 극값 + RSI 역행)이며, 파동 박스용 축약 표기다.
+// 경고 문구만 남기고 점수는 건드리지 않는다 (RSI 고점 추종이 실측에 유리했으므로 역행 매매 근거로 쓰지 않음).
+function detectWaveRsiDivergence(rows, piv){
+  try{
+    if(!Array.isArray(rows) || rows.length<15 || !Array.isArray(piv)) return [];
+    const CA=(typeof globalThis!=='undefined' && globalThis.CoinAnalysis) || null;
+    if(!CA) return [];
+    const rs=CA.rsi(rows.map(c=>c.close),14);
+    const H=piv.filter(p=>p.t==='H').slice(-2), L=piv.filter(p=>p.t==='L').slice(-2);
+    const out=[];
+    if(H.length===2 && H[1].price>H[0].price){
+      const r0=rs[H[0].idx], r1=rs[H[1].idx];
+      if(r0!=null&&r1!=null&&r1<r0) out.push('약세 다이버전스: 고점은 높이고 RSI는 낮아짐 — 추격 매수 주의');
+    }
+    if(L.length===2 && L[1].price<L[0].price){
+      const r0=rs[L[0].idx], r1=rs[L[1].idx];
+      if(r0!=null&&r1!=null&&r1>r0) out.push('강세 다이버전스: 저점은 낮추고 RSI는 올라옴 — 반등 여지');
+    }
+    return out;
+  }catch(e){ return []; }
+}
 function waveConfidence(r, rows){
   rows=rows||candles;
   let sc=5, why=[];
@@ -1379,9 +1406,13 @@ function waveConfidence(r, rows){
       const w1=Math.abs(P[1]-P[0]), w3=Math.abs(P[3]-P[2]);
       if(w3>=w1*1.4){sc++; why.push('3파 연장('+(w3/w1).toFixed(2)+'배) 전형적');}
     }
-    // RSI 다이버전스: 5파 구간에서 가격 신고점 + RSI 저점 -> 경고 가점(신뢰도엔 +)
+    // RSI 다이버전스는 실검출로 표시한다. 없으면 5파에서만 RSI 값을 참고로 적는다.
     try{
-      if(r.n>=5){ const rv=calcRSILast(rows.map(c=>c.close)); if(rv!=null) why.push('5파 구간 — RSI 다이버전스 점검 필요(RSI '+rv.toFixed(1)+')'); }
+      detectWaveRsiDivergence(rows, zigzagPivots(rows)).forEach(t=>why.push(t));
+      if(r.n>=5 && !why.some(w=>w.indexOf('다이버전스')>=0)){
+        const rv=calcRSILast(rows.map(c=>c.close));
+        if(rv!=null) why.push('5파 구간 — RSI '+rv.toFixed(1)+', 다이버전스 없음');
+      }
     }catch(e){}
     try{ // VPVR POC와 파동 매듭 겹침
       const vp=calcVPVR(40, rows); if(vp.length){
@@ -2813,7 +2844,10 @@ function renderSidebarSnapshot(snap, rows, tfArg=tf, exchange=activeExchange) {
   rsiEl.style.color = snap.rsi>70?'#f6465d':snap.rsi<30?'#0ecb81':'var(--tx-strong)';
   const macdEl = document.getElementById('vMACD');
   macdEl.textContent = snap.macd!=null?snap.macd.toFixed(4):'--';
-  macdEl.style.color = snap.macd>0?'#0ecb81':'#f6465d';
+  // 색은 MACD선 위치가 아니라 히스토그램(모멘텀 방향) 기준. 값은 그대로 둔다.
+  macdEl.style.color = snap.macdHist!=null?(snap.macdHist>0?'#0ecb81':'#f6465d'):(snap.macd>0?'#0ecb81':'#f6465d');
+  macdEl.dataset.hist = snap.macdHist!=null?snap.macdHist:'';
+  macdEl.title = snap.macdHist!=null?('MACD 히스토그램 '+(snap.macdHist>=0?'+':'')+snap.macdHist.toFixed(4)):'';
   const cciEl = document.getElementById('vCCI');
   cciEl.textContent = snap.cci!=null?snap.cci.toFixed(1):'--';
   cciEl.style.color = snap.cci>100?'#f6465d':snap.cci<-100?'#0ecb81':'var(--tx-strong)';
