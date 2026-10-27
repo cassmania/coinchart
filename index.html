@@ -2635,13 +2635,100 @@ function renderUsdtDominance(d) {
   if(updated) updated.textContent=`${value.toFixed(3)}% · ${kstTime(d.fetchedAt,false)}`;
 }
 
-function loadUsdtDominance() {
-  // GitHub Pages에서 CoinGecko 직접 호출은 CORS로 차단됩니다.
-  // 실패 요청이나 추정값 대신 수치 미제공 상태를 명시하고, 시계열은 TradingView 차트로 분리합니다.
-  usdtDominanceState=null;
-  renderUsdtDominance(null);
+async function loadUsdtDominance() {
+  // CoinGecko /global(USDT 비중 직접 제공) → 429 등 실패 시 CoinPaprika 시가총액으로 계산. 둘 다 실패하면 값을 비운다.
+  let d=null;
+  try{
+    const g=(await fetchJson('https://api.coingecko.com/api/v3/global')).data;
+    const value=Number(g?.market_cap_percentage?.usdt), total=Number(g?.total_market_cap?.usd);
+    if(value>0&&total>0) d={value,totalMarketCap:total,usdtMarketCap:total*value/100,source:'CoinGecko /global',fetchedAt:Date.now()};
+  }catch(e){}
+  if(!d){
+    try{
+      const [g,u]=await Promise.all([fetchJson('https://api.coinpaprika.com/v1/global'),fetchJson('https://api.coinpaprika.com/v1/tickers/usdt-tether')]);
+      const total=Number(g?.market_cap_usd), usdt=Number(u?.quotes?.USD?.market_cap);
+      if(total>0&&usdt>0) d={value:usdt/total*100,totalMarketCap:total,usdtMarketCap:usdt,source:'CoinPaprika 시가총액',fetchedAt:Date.now()};
+    }catch(e){}
+  }
+  if(!d && usdtDominanceState && Date.now()-usdtDominanceState.fetchedAt<10*60*1000) return; // 일시 실패면 직전 값 유지
+  usdtDominanceState=d;
+  renderUsdtDominance(d);
   if(v31State) renderV31Analysis(v31State.symbol,v31State.exchange,v31State.entries,v31State.fx,v31State.futures);
 }
+
+// PART 2~4 보조 원자료(키 없음·브라우저 CORS 허용 소스만). 심볼별 캐시, 실패한 항목은 null로 남기고 추정하지 않는다.
+const v31ExtrasCache=new Map();
+function v31Extras(symbol) {
+  const hit=v31ExtrasCache.get(symbol);
+  if(hit && (hit.loading || Date.now()-hit.fetchedAt<60*1000)) return hit.data;
+  v31ExtrasCache.set(symbol,{loading:true,fetchedAt:hit?.fetchedAt||0,data:hit?.data||null});
+  loadV31Extras(symbol).then(data=>{
+    v31ExtrasCache.set(symbol,{loading:false,fetchedAt:Date.now(),data});
+    if(v31State?.symbol===symbol) renderV31Analysis(v31State.symbol,v31State.exchange,v31State.entries,v31State.fx,v31State.futures);
+  });
+  return hit?.data||null;
+}
+
+async function loadV31Extras(symbol) {
+  const base=symbol.replace(/USDT$/,'');
+  const asset=base.toLowerCase();
+  const [kl,ls,liq,cm,sopr,pap]=await Promise.allSettled([
+    fetchJson(`${BNF}/klines?symbol=${symbol}&interval=1h&limit=25`),
+    fetchJson(`https://fapi.binance.com/futures/data/globalLongShortAccountRatio?symbol=${symbol}&period=1h&limit=1`),
+    Promise.all([
+      fetchJson(`${OKX}/public/liquidation-orders?instType=SWAP&uly=${base}-USDT&state=filled`),
+      fetchJson(`${OKX}/public/instruments?instType=SWAP&instId=${base}-USDT-SWAP`)
+    ]),
+    fetchJson(`https://community-api.coinmetrics.io/v4/timeseries/asset-metrics?assets=${asset}&metrics=CapMVRVCur,FlowInExNtv,FlowOutExNtv&page_size=1&paging_from=end&ignore_unsupported_errors=true`),
+    base==='BTC' ? fetchJson('https://bitcoin-data.com/v1/sopr/last') : Promise.reject(new Error('BTC 전용')),
+    fetchJson(`https://api.coinpaprika.com/v1/search?q=${encodeURIComponent(base)}&c=currencies&limit=10`)
+      .then(r=>{
+        const coin=(r.currencies||[]).filter(c=>c.symbol?.toUpperCase()===base&&c.is_active).sort((a,b)=>(a.rank||1e9)-(b.rank||1e9))[0];
+        if(!coin) throw new Error('코인 없음');
+        return fetchJson(`https://api.coinpaprika.com/v1/tickers/${coin.id}`);
+      })
+  ]);
+  const out={fetchedAt:Date.now(),cvd:null,longShort:null,liq:null,chain:null,sopr:null,supply:null};
+  if(kl.status==='fulfilled' && Array.isArray(kl.value) && kl.value.length>1){
+    // 마지막(진행 중) 봉 제외. 테이커 매수량 - 테이커 매도량 = 2*takerBuy - volume (기준 통화 수량)
+    const rows=kl.value.slice(0,-1).map(k=>({px:+k[4],d:2*(+k[9])-(+k[5])}));
+    const sum=arr=>arr.reduce((s,r)=>s+r.d,0);
+    out.cvd={d24:sum(rows),d1:rows.at(-1).d,px:rows.at(-1).px};
+  }
+  if(ls.status==='fulfilled' && ls.value?.[0]) out.longShort={long:+ls.value[0].longAccount,short:+ls.value[0].shortAccount,ratio:+ls.value[0].longShortRatio,ts:+ls.value[0].timestamp};
+  if(liq.status==='fulfilled'){
+    const [orders,inst]=liq.value;
+    const ctVal=Number(inst?.data?.[0]?.ctVal);
+    const since=Date.now()-60*60*1000;
+    const details=(orders?.data||[]).flatMap(o=>o.details||[]);
+    if(ctVal>0){
+      let longUsd=0,shortUsd=0,count=0,oldest=Infinity;
+      details.forEach(x=>{
+        const ts=+x.ts; oldest=Math.min(oldest,ts);
+        if(ts<since) return;
+        const usd=(+x.sz)*ctVal*(+x.bkPx);
+        if(x.posSide==='long') longUsd+=usd; else shortUsd+=usd;
+        count++;
+      });
+      out.liq={longUsd,shortUsd,count,windowMin:Math.round((Date.now()-Math.max(oldest,since))/60000)};
+    }
+  }
+  if(cm.status==='fulfilled'){
+    const r=cm.value?.data?.[0];
+    if(r) out.chain={time:r.time?.slice(0,10),mvrv:r.CapMVRVCur!=null?+r.CapMVRVCur:null,inflow:r.FlowInExNtv!=null?+r.FlowInExNtv:null,outflow:r.FlowOutExNtv!=null?+r.FlowOutExNtv:null};
+  }
+  if(sopr.status==='fulfilled' && Number.isFinite(+sopr.value?.sopr)) out.sopr={value:+sopr.value.sopr,date:sopr.value.d,delayed:!!sopr.value.delayed};
+  if(pap.status==='fulfilled'){
+    const t=pap.value;
+    // 티커 응답엔 유통량 필드가 없다 → 시총÷가격으로 역산
+    const mcap=+t.quotes?.USD?.market_cap||null, price=+t.quotes?.USD?.price||null;
+    out.supply={name:t.name,circ:mcap&&price?mcap/price:null,total:+t.total_supply||null,max:+t.max_supply||null,mcap};
+  }
+  return out;
+}
+
+function v31Usd(n){ return n>=1e12?`$${(n/1e12).toFixed(2)}T`:n>=1e9?`$${(n/1e9).toFixed(2)}B`:n>=1e6?`$${(n/1e6).toFixed(2)}M`:n>=1e3?`$${(n/1e3).toFixed(1)}K`:`$${n.toFixed(0)}`; }
+function v31Qty(n){ const a=Math.abs(n); return (n<0?'-':'')+(a>=1e9?`${(a/1e9).toFixed(2)}B`:a>=1e6?`${(a/1e6).toFixed(2)}M`:a>=1e3?`${(a/1e3).toFixed(1)}K`:a.toFixed(a>=10?0:2)); }
 
 function v31Price(price, fx, digits=null) {
   if(!Number.isFinite(price)) return '계산 불가';
@@ -2774,6 +2861,35 @@ function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
   const dominanceText=usdtDominanceState&&Number.isFinite(usdtDominanceState.value)
     ? `USDT.D ${usdtDominanceState.value.toFixed(3)}% · 현재값 기준 · ${usdtDominanceState.source}`
     : 'USDT 도미넌스 현재 데이터 확인 불가';
+  const ex=v31Extras(symbol);
+  const baseSym=symbol.replace(/USDT$/,'');
+  const pending=ex?'조회 실패 · 해당 종목 원자료 없음':'조회 중';
+  const cvdText=ex?.cvd
+    ? `Binance 선물 테이커 순매수 24H ${v31Qty(ex.cvd.d24)} ${baseSym}(${v31Usd(Math.abs(ex.cvd.d24*ex.cvd.px))} ${ex.cvd.d24>=0?'매수 우위':'매도 우위'}) · 직전 1H ${v31Qty(ex.cvd.d1)} ${baseSym}`
+    : pending;
+  const lsText=ex?.longShort
+    ? `Binance 전체 계정 롱 ${(ex.longShort.long*100).toFixed(1)}% / 숏 ${(ex.longShort.short*100).toFixed(1)}% · 비율 ${ex.longShort.ratio.toFixed(2)}${ex.longShort.ratio>=2?' · 롱 쏠림(역방향 경계)':ex.longShort.ratio<=0.7?' · 숏 쏠림(역방향 경계)':''}`
+    : pending;
+  const liqText=ex?.liq
+    ? (ex.liq.count
+      ? `OKX 체결 청산 최근 ${ex.liq.windowMin}분 ${ex.liq.count}건 · 롱 청산 ${v31Usd(ex.liq.longUsd)} / 숏 청산 ${v31Usd(ex.liq.shortUsd)}`
+      : `OKX 체결 청산 최근 ${ex.liq.windowMin}분 없음`)
+    : pending;
+  const chain=ex?.chain;
+  const netflow=chain&&Number.isFinite(chain.inflow)&&Number.isFinite(chain.outflow)?chain.inflow-chain.outflow:null;
+  const flowText=Number.isFinite(netflow)
+    ? `거래소 순유입 ${v31Qty(netflow)} ${baseSym}(유입 ${v31Qty(chain.inflow)} / 유출 ${v31Qty(chain.outflow)}) · ${netflow>0?'매도 대기 물량 증가 가능성':'거래소 이탈 · 보유 성향'} · ${chain.time} 일간 · CoinMetrics`
+    : ex?'거래소 순유입: CoinMetrics 무료 범위 밖 종목(BTC·ETH만 제공)':'거래소 순유입 조회 중';
+  const mvrvText=chain&&Number.isFinite(chain.mvrv)
+    ? `MVRV ${chain.mvrv.toFixed(2)}${chain.mvrv>=3.5?' · 과열권':chain.mvrv<1?' · 실현가 아래(저평가권)':''} · ${chain.time}`
+    : ex?'MVRV: 무료 원자료에 없는 종목':'MVRV 조회 중';
+  const soprText=ex?.sopr
+    ? `SOPR ${ex.sopr.value.toFixed(4)}${ex.sopr.value>=1?' · 이익 실현 우세':' · 손실 실현 우세'} · ${ex.sopr.date}${ex.sopr.delayed?' (무료 공개분 7일 지연)':''}`
+    : baseSym==='BTC'?(ex?'SOPR 조회 실패':'SOPR 조회 중'):'SOPR: BTC만 무료 제공';
+  const sp=ex?.supply;
+  const supplyText=sp&&sp.circ
+    ? `${sp.name} 유통 ${v31Qty(sp.circ)}${sp.max?` / 최대 ${v31Qty(sp.max)} · 유통률 ${Math.min(100,sp.circ/sp.max*100).toFixed(1)}%`:' · 최대 공급 상한 없음'}${sp.mcap?` · 시총 ${v31Usd(sp.mcap)}`:''} · CoinPaprika`
+    : pending;
 
   const fundingText=Number.isFinite(futuresData?.fr)
     ? `${futuresData.exchange} ${futuresData.marketType} · ${(futuresData.fr*100).toFixed(4)}% · ${kstTime(futuresData.fetchedAt)} KST`
@@ -2821,10 +2937,10 @@ function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
       <div class="v31-line"><b>${esc(primaryTf.toUpperCase())}</b> ${esc(adxText)}<br>SMA20/60/120/200 ${esc(maText)} · SuperTrend ${esc(stText)}<br>${esc(momentumText)}<br>RSI 다이버전스 ${esc(divergenceText)}<br>${esc(breakText)} · ${esc(sweepText)}<br><b>저항</b> ${esc(resistanceText)}<br><b>지지</b> ${esc(supportText)}<br>FVG ${esc(fvgText)}<br>오더블록 ${esc(obText)}<br>근사 VPVR ${esc(vpvrText)}<br>앵커 VWAP ${esc(vwapText)}<br>피보나치 ${esc(fibText)}</div>
     </div>
     <div class="v31-part"><div class="v31-part-title">PART 2 · 선물 및 군중 심리</div>
-      <div class="v31-line">펀딩비 ${esc(fundingText)}<br>OI ${esc(oiText)}<br>${esc(derivativesInterpretation)}<br><span class="v31-missing">CVD/청산맵: 현재 실시간 데이터 확인 불가</span></div>
+      <div class="v31-line">펀딩비 ${esc(fundingText)}<br>OI ${esc(oiText)}<br>${esc(derivativesInterpretation)}<br><b>CVD</b> ${esc(cvdText)}<br><b>롱숏비</b> ${esc(lsText)}<br><b>청산</b> ${esc(liqText)}<br><span class="v31-missing">청산 히트맵(예상 청산가 분포)은 유료 데이터라 미제공</span></div>
     </div>
-    <div class="v31-part"><div class="v31-part-title">PART 3 · 온체인 및 고래</div><div class="v31-line v31-missing">거래소 순유입·고래 지갑·MVRV·SOPR: 현재 실시간 데이터 확인 불가</div></div>
-    <div class="v31-part"><div class="v31-part-title">PART 4 · 토큰노믹스 및 뉴스</div><div class="v31-line v31-missing">토큰 언락·기관 동향·프로젝트 이벤트·개별 뉴스: 현재 실시간 데이터 확인 불가 · 웹 조사 미수행</div></div>
+    <div class="v31-part"><div class="v31-part-title">PART 3 · 온체인 및 고래</div><div class="v31-line">${esc(flowText)}<br>${esc(mvrvText)}<br>${esc(soprText)}<br><span class="v31-missing">개별 고래 지갑 추적: 키 없는 원자료 없음</span></div></div>
+    <div class="v31-part"><div class="v31-part-title">PART 4 · 토큰노믹스 및 뉴스</div><div class="v31-line"><b>공급</b> ${esc(supplyText)}<br><span class="v31-missing">언락 일정·기관 동향·개별 뉴스: 브라우저에서 키 없이 받을 원자료 없음 · <a href="https://www.coindesk.com/search?s=${encodeURIComponent(baseSym)}" target="_blank" rel="noopener">CoinDesk</a> · <a href="https://tokenomist.ai/" target="_blank" rel="noopener">Tokenomist</a>에서 확인</span></div></div>
     <div class="v31-part ${longReady?'v31-long':'v31-wait'}"><div class="v31-part-title">PART 5 · 실행 전략 및 위험관리</div><div class="v31-line"><b>롱</b> ${esc(longText)}<br><b>숏/관망</b> ${esc(shortText)}<br><b>최종 판단</b> ${esc(bias)}<br>${esc(riskText)}<br>확정봉 조건 전 선진입 보류 · 수수료/슬리피지 반영 필요 · 투자 조언이나 수익 보장이 아닙니다.</div></div>`;
 
   const briefing=[
@@ -2857,11 +2973,16 @@ function renderV31Analysis(symbol, exchange, entries, fx, futuresData=null) {
     `- 펀딩비: ${fundingText}`,
     `- OI: ${oiText}`,
     `- 가격/OI 해석: ${derivativesInterpretation}`,
-    `- CVD/청산맵: 현재 실시간 데이터 확인 불가`,
+    `- CVD: ${cvdText}`,
+    `- 롱숏비: ${lsText}`,
+    `- 청산: ${liqText}`,
     `■ 온체인 및 고래`,
-    `- 순유입·고래·MVRV·SOPR: 현재 실시간 데이터 확인 불가`,
+    `- ${flowText}`,
+    `- ${mvrvText}`,
+    `- ${soprText}`,
     `■ 토큰노믹스 및 뉴스`,
-    `- 언락·기관·이벤트·뉴스: 현재 실시간 데이터 확인 불가 · 웹 조사 미수행`,
+    `- 공급: ${supplyText}`,
+    `- 언락·기관·뉴스: 키 없는 원자료 없음 · 별도 확인 필요`,
     `■ 시나리오별 매매 전략`,
     `- 롱: ${longText}`,
     `- 숏/관망: ${shortText}`,
