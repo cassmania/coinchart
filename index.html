@@ -1795,7 +1795,29 @@ function renderCompositeSignal(signal, fundingRate=0){
   // 펀딩비는 방향 점수에 넣지 않고 과열 문맥으로만 보여줍니다.
   if(fundingRate>0.05) html+=' <span class="sig neutral">펀딩비 과열↑(참고)</span>';
   if(fundingRate<-0.05) html+=' <span class="sig neutral">펀딩비 과열↓(참고)</span>';
-  return html;
+  return html+renderTradePlan(signal,fundingRate);
+}
+
+// 2026-10-30 백테스트(8종목 4시간봉 2022-09~2026-10, 비용 왕복 0.1%)에서 기대값을 0 → +0.25R로 올린 실행 규칙.
+// 강한 우위(+0.35) + ADX14 ≥ 25 + 펀딩비 < 0.03%일 때 롱, 강한 숏 우위(−0.35)가 나올 때까지 보유, 손절 2.5×ATR, 최대 100봉.
+// 숏은 어떤 조합에서도 기대값이 0 근처라 참고로만 보여준다. 단순 추세 추종보다 낫다는 증거는 아직 없다.
+function attachTradePlan(signal, rows){
+  if(!signal?.ready || !window.Engine || !rows?.length) return signal;
+  const li=rows.length-1;
+  signal.plan={ adx:Engine.adx(rows,14).adx[li], atr:Engine.atr(rows,14)[li], close:rows[li].close };
+  return signal;
+}
+function renderTradePlan(signal, fundingRate=0){
+  const p=signal.plan;
+  if(!p) return '';
+  const s=signal.score, tip='title="4시간봉 8종목 4년 백테스트 기준 · 강한 우위 ±0.35 · ADX 25 이상 · 펀딩비 0.03% 미만일 때 롱 · 반대 강한 신호까지 보유 · 손절 2.5×ATR · 최대 100봉 · 숏은 검증 기대값이 0 근처라 참고만 · 단순 추세 추종보다 낫다는 증거는 없음"';
+  if(s<=-0.35) return ` <span class="sig neutral" ${tip}>실행 규칙: 롱 보유 중이면 청산 · 숏은 참고만</span>`;
+  if(s<0.35) return ` <span class="sig neutral" ${tip}>실행 규칙: 대기 (점수 ${s.toFixed(2)}, 롱은 +0.35부터)</span>`;
+  const why=[];
+  if(!(p.adx>=25)) why.push(`ADX ${Number.isFinite(p.adx)?p.adx.toFixed(1):'—'} &lt; 25`);
+  if(fundingRate>=0.03) why.push(`펀딩비 ${fundingRate.toFixed(3)}% ≥ 0.03%`);
+  if(why.length) return ` <span class="sig neutral" ${tip}>실행 규칙: 롱 보류 (${why.join(' · ')})</span>`;
+  return ` <span class="sig long" ${tip}>실행 규칙: 롱 진입 · 손절 약 ${(p.close-2.5*p.atr).toFixed(dp())} · 강한 숏 우위 나오면 청산</span>`;
 }
 
 // ── 보조지표 (trading-chart engine.js 이식) ────────────────────────────
@@ -1910,7 +1932,7 @@ function doAdaptive(rows) {
 
 function doSignal(rows=getSignalRows()){
   if (selectedPanelIdx !== 1) return;
-  document.getElementById('sigRow').innerHTML=renderCompositeSignal(CoinAnalysis.compositeSignal(rows),frVal);
+  document.getElementById('sigRow').innerHTML=renderCompositeSignal(attachTradePlan(CoinAnalysis.compositeSignal(rows),rows),frVal);
 }
 
 function updOHLC(c){
@@ -2574,7 +2596,7 @@ function calcSnapshot(rows, tfArg=tf) {
   const macdResult = CoinAnalysis.macd(closes,12,26,9);
   return {
     m20, m60, m120, m200, bbUp, vwap, last, d2,
-    signal: CoinAnalysis.compositeSignal(rows),
+    signal: attachTradePlan(CoinAnalysis.compositeSignal(rows),rows),
     stDir: calcSTLast(rows),
     rsi: calcRSILast(closes),
     macd: CoinAnalysis.lastFinite(macdResult.line),
