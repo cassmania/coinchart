@@ -82,6 +82,17 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
 .topbar-price.pop{animation:badgePop .45s ease-out;}
 .sb-ttl-row{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
 .sb-sel-sym{font-size:10px;font-weight:700;color:var(--b);background:rgba(201,100,66,.12);border:1px solid rgba(201,100,66,.3);border-radius:3px;padding:1px 6px;}
+.trust{font-size:10px;font-weight:600;border-radius:999px;padding:1px 7px;white-space:nowrap;cursor:help;margin-left:6px;vertical-align:1px;}
+.trust.ok{color:var(--y);background:color-mix(in srgb,var(--y) 15%,transparent);}
+.trust.rnd{color:var(--tx2);background:var(--bg3);}
+.trust.bad{color:var(--r);background:color-mix(in srgb,var(--r) 13%,transparent);}
+.trust-box summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:6px;}
+.trust-box summary::-webkit-details-marker{display:none;}
+.trust-tbl{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px;}
+.trust-tbl td{padding:5px 2px;border-top:1px solid var(--bd);vertical-align:top;color:var(--tx);}
+.trust-tbl td:last-child{text-align:right;white-space:nowrap;}
+.trust-tbl small{display:block;color:var(--tx3);font-size:10px;line-height:1.45;margin-top:1px;}
+.trust-note{font-size:10px;line-height:1.5;color:var(--tx3);margin-top:6px;}
 .chart-main.maximized-active{display:block !important;background:transparent;}
 .chart-main.maximized-active .chart-panel{display:none;}
 .chart-main.maximized-active .chart-panel.maximized{display:block;width:100%;height:100%;}
@@ -357,17 +368,22 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
 <!-- 사이드바 -->
 <div class="sidebar">
 <div class="sb-scroll">
+  <details class="sb-sec trust-box" open>
+    <summary><div class="sb-ttl" style="margin-bottom:0">지표 신뢰도 · 백테스트</div><span class="trust bad" title="이 화면의 지표·신호를 차트 코드 그대로 과거 데이터에 돌린 결과">대부분 무작위 수준</span></summary>
+    <table class="trust-tbl"><tr><td>과매수·과매도 (RSI·CCI·스토캐)<small>반전 방향 적중이 기준보다 +2~7%p. 반대 신호까지 들고 있으면 −0.08~−0.18R</small></td><td><span class="trust ok">방향만 참고</span></td></tr><tr><td>유동성 스윕 반전<small>적중 +1~4%p · 매매로는 −0.06~−0.13R</small></td><td><span class="trust ok">방향만 참고</span></td></tr><tr><td>종합 시그널<small>적중 46~48% (기준 50%) · 점수가 높아도 더 맞지 않음</small></td><td><span class="trust bad">기준보다 낮음</span></td></tr><tr><td>실행 규칙 롱<small>4시간봉 4년: +0.47R, 무작위 진입도 +0.48R</small></td><td><span class="trust rnd">무작위 수준</span></td></tr><tr><td>보조지표 자동<small>과거로만 고른 지표의 다음 구간 성과 +0.01R</small></td><td><span class="trust rnd">무작위 수준</span></td></tr><tr><td>엘리엇 파동<small>방향 적중 ≈50% · 확신도 점수와 적중률 무관</small></td><td><span class="trust rnd">무작위 수준</span></td></tr><tr><td>구조 돌파 (AI MASTER)<small>돌파 뒤 되밀림이 더 잦음 (−2~−6%p)</small></td><td><span class="trust bad">기준보다 낮음</span></td></tr><tr><td>MA 배열·슈퍼트렌드·MACD<small>적중이 기준과 ±2%p 이내</small></td><td><span class="trust rnd">무작위 수준</span></td></tr><tr><td>지지·저항선<small>지킴률 48~51% = 1 ATR 옮긴 가짜 선과 같음</small></td><td><span class="trust rnd">무작위 수준</span></td></tr></table>
+    <div class="trust-note">2026-11-06 검증 · 이 차트 코드 그대로 · 바이낸스 8종목 × 1시간~일봉(앞·뒤 기간 나눠 확인) + 4시간봉 4년치 · 신호 다음 봉 진입 · 손절 2.5×ATR · 수수료 0.1% · 적중 기준 = 같은 기간 아무 때나 찍었을 때 · 15분봉은 모든 지표 손실 · 과거 결과이며 미래를 보장하지 않습니다</div>
+  </details>
   <div class="sb-sec">
-    <div class="sb-ttl-row"><div class="sb-ttl" style="margin-bottom:0">지지·저항선</div><span class="sb-sel-sym" id="sbSelSym">메인</span></div>
+    <div class="sb-ttl-row"><div class="sb-ttl" style="margin-bottom:0">지지·저항선<span class="trust rnd" title="1차 지지·저항에 닿은 뒤 지켜진 비율 48~51% — 0.5~1.5 ATR 옮긴 가짜 선(46~52%)과 같음">지킴률≈무작위</span></div><span class="sb-sel-sym" id="sbSelSym">메인</span></div>
     <div class="sr-list" id="srList"><div style="color:var(--b);font-size:11px">로딩 후 자동 계산</div></div>
   </div>
   <div class="sb-sec">
-    <div class="sb-ttl-row"><div class="sb-ttl" style="margin-bottom:0">보조지표 · 검증 자동 적용</div><div class="tog on" id="tADAPT" onclick="togInd('ADAPT')"></div></div>
+    <div class="sb-ttl-row"><div class="sb-ttl" style="margin-bottom:0">보조지표 · 검증 자동 적용<span class="trust rnd" title="8종목 워크포워드 재검증 +0.01R — 무작위 진입과 차이 없음">무작위 수준</span></div><div class="tog on" id="tADAPT" onclick="togInd('ADAPT')"></div></div>
     <select id="indSel" class="ind-sel" onchange="indView=this.value;adaptiveKey='';renderAll()"><option value="auto">자동 (국면별 최적)</option></select>
     <div id="indCard" class="ind-card"><span class="ind-dim">로딩 후 자동 계산</span></div>
   </div>
   <div class="sb-sec">
-    <div class="sb-ttl">이동평균선</div>
+    <div class="sb-ttl">이동평균선<span class="trust rnd" title="MA 정배열/역배열·슈퍼트렌드 전환 뒤 방향 적중이 기준과 ±2%p 이내">배열·추세 무작위 수준</span></div>
     <div class="irow"><span class="iname">MA20</span><span class="ival" id="vMA20" style="color:#f0a500">--</span><div class="tog on" id="tMA20" onclick="togInd('MA20')"></div></div>
     <div class="irow"><span class="iname">MA60</span><span class="ival" id="vMA60" style="color:#5b8ff9">--</span><div class="tog on" id="tMA60" onclick="togInd('MA60')"></div></div>
     <div class="irow"><span class="iname">MA120</span><span class="ival" id="vMA120" style="color:#12a150">--</span><div class="tog on" id="tMA120" onclick="togInd('MA120')"></div></div>
@@ -380,7 +396,7 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
     <div class="irow"><span class="iname">엘리엇 파동</span><span class="ival" style="color:#e1306c">자동 카운팅</span><div class="tog on" id="tWAVE" onclick="togInd('WAVE')"></div></div>
   </div>
   <div class="sb-sec">
-    <div class="sb-ttl">오실레이터</div>
+    <div class="sb-ttl">오실레이터<span class="trust ok" title="RSI 30↓·CCI −100↓·스토캐 20↓(초록)에서 반등, 반대(빨강)에서 하락할 확률이 기준보다 2~7%p 높음. 단 반대 신호까지 들고 있는 매매는 손실(−0.08~−0.18R) · MACD는 무작위 수준">과매수·과매도 방향 참고</span></div>
     <div class="stat-grid">
       <div class="stat-box"><div class="sl">RSI(14)</div><div class="sv" id="vRSI">--</div></div>
       <div class="stat-box"><div class="sl">CCI(20)</div><div class="sv" id="vCCI">--</div></div>
@@ -400,7 +416,7 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
     <div id="futuresSource" style="margin-top:5px;font-size:10px;line-height:1.4;color:var(--tx3)">출처 확인 중</div>
   </div>
   <div class="sb-sec">
-    <div class="sb-ttl">종합 시그널</div>
+    <div class="sb-ttl">종합 시그널<span class="trust bad" title="상승/하락 우위가 뜬 뒤 6·24봉 방향 적중 46~48% — 아무 때나 찍었을 때(50%)보다 낮음. 점수 크기와 결과도 무관">적중 46~48%</span></div>
     <div class="sig-row" id="sigRow"><span class="sig neutral">분석 중...</span></div>
   </div>
   <div class="sb-sec">
@@ -409,7 +425,7 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
   </div>
   <div class="sb-sec">
     <div class="sb-ttl-row">
-      <div class="sb-ttl" style="margin-bottom:0">AI MASTER 분석 V4.1</div>
+      <div class="sb-ttl" style="margin-bottom:0">AI MASTER 분석 V4.1<span class="trust bad" title="구조 돌파(BOS) 뒤 6·24봉 방향 적중이 기준보다 2~6%p 낮음(되밀림이 더 잦음). 유동성 스윕 반전은 +1~4%p">돌파 적중 기준↓</span></div>
       <button class="v31-copy" id="v31Copy" onclick="copyV31Briefing()" disabled>브리핑 복사</button>
     </div>
     <div id="v31Box" data-symbol="" data-timeframe="" data-state="대기">
@@ -426,7 +442,7 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
     </div>
   </div>
   <div class="sb-sec">
-    <div class="sb-ttl-row"><div class="sb-ttl" style="margin-bottom:0">📐 엘리엇 파동 분석</div><span class="sb-sel-sym" id="waveConf">--</span></div>
+    <div class="sb-ttl-row"><div class="sb-ttl" style="margin-bottom:0">📐 엘리엇 파동 분석<span class="trust rnd" title="파동 방향 뒤 24봉 적중 ≈50%, 확신도 점수(1~10)와 적중률 사이에 관계 없음">무작위 수준</span></div><span class="sb-sel-sym" id="waveConf">--</span></div>
     <div id="waveBox" style="font-size:11px;line-height:1.6;color:var(--tx2)">캔들 로딩 후 자동 카운팅</div>
   </div>
   <div class="sb-sec">
@@ -1798,7 +1814,8 @@ function renderCompositeSignal(signal, fundingRate=0){
   return html+renderTradePlan(signal,fundingRate);
 }
 
-// 2026-10-30 백테스트(8종목 4시간봉 2022-09~2026-10, 비용 왕복 0.1%)에서 기대값을 0 → +0.25R로 올린 실행 규칙.
+// 2026-10-30 백테스트에서 +0.25R로 보였던 실행 규칙. 2026-11-06 재검증 결과 같은 기간 무작위 진입(+0.48R)과 차이가 없어
+// (상승장 수익이 대부분) 화면에는 참고용으로만 표시한다.
 // 강한 우위(+0.35) + ADX14 ≥ 25 + 펀딩비 < 0.03%일 때 롱, 강한 숏 우위(−0.35)가 나올 때까지 보유, 손절 2.5×ATR, 최대 100봉.
 // 숏은 어떤 조합에서도 기대값이 0 근처라 참고로만 보여준다. 단순 추세 추종보다 낫다는 증거는 아직 없다.
 function attachTradePlan(signal, rows){
@@ -1810,14 +1827,14 @@ function attachTradePlan(signal, rows){
 function renderTradePlan(signal, fundingRate=0){
   const p=signal.plan;
   if(!p) return '';
-  const s=signal.score, tip='title="4시간봉 8종목 4년 백테스트 기준 · 강한 우위 ±0.35 · ADX 25 이상 · 펀딩비 0.03% 미만일 때 롱 · 반대 강한 신호까지 보유 · 손절 2.5×ATR · 최대 100봉 · 숏은 검증 기대값이 0 근처라 참고만 · 단순 추세 추종보다 낫다는 증거는 없음"';
+  const s=signal.score, tip='title="2026-11-06 재검증(바이낸스 8종목 4시간봉 4년): 강한 우위 +0.35 · ADX 25 이상 롱은 무작위 진입과 같은 성과(상승기 +0.47R vs +0.48R, 하락기 −0.01R vs −0.03R) · 펀딩비 조건 제외 · 참고용"';
   if(s<=-0.35) return ` <span class="sig neutral" ${tip}>실행 규칙: 롱 보유 중이면 청산 · 숏은 참고만</span>`;
   if(s<0.35) return ` <span class="sig neutral" ${tip}>실행 규칙: 대기 (점수 ${s.toFixed(2)}, 롱은 +0.35부터)</span>`;
   const why=[];
   if(!(p.adx>=25)) why.push(`ADX ${Number.isFinite(p.adx)?p.adx.toFixed(1):'—'} &lt; 25`);
   if(fundingRate>=0.03) why.push(`펀딩비 ${fundingRate.toFixed(3)}% ≥ 0.03%`);
   if(why.length) return ` <span class="sig neutral" ${tip}>실행 규칙: 롱 보류 (${why.join(' · ')})</span>`;
-  return ` <span class="sig long" ${tip}>실행 규칙: 롱 진입 · 손절 약 ${(p.close-2.5*p.atr).toFixed(dp())} · 강한 숏 우위 나오면 청산</span>`;
+  return ` <span class="sig neutral" ${tip}>실행 규칙: 롱 조건 충족 · 손절 약 ${(p.close-2.5*p.atr).toFixed(dp())} · 검증상 무작위 수준</span>`;
 }
 
 // ── 보조지표 (trading-chart engine.js 이식) ────────────────────────────
@@ -1927,6 +1944,7 @@ function doAdaptive(rows) {
     `<div class="ind-row"><span class="ind-k">현재 국면</span><b>${esc(Engine.REGIME_NAME[a.regime] || '—')}</b><span class="ind-dim">ADX ${c.adx==null?'—':c.adx.toFixed(1)} · +DI ${c.pdi==null?'—':c.pdi.toFixed(1)} / −DI ${c.mdi==null?'—':c.mdi.toFixed(1)}</span></div>`
     + `<div class="ind-row"><span class="ind-k">${v.auto?'자동 적용 지표':'선택 지표'}</span><b>${esc(strat.name)}</b><span class="ind-dim">${esc(strat.kind+' · '+strat.desc)}</span></div>`
     + `<div class="ind-row"><span class="ind-k">워크포워드 검증 (미래 참조 없음)</span><b>${indStatsText(v.stats)}</b><span><span class="conf ${conf.cls}">${conf.label}</span></span></div>`
+    + `<div class="ind-row"><span class="ind-k">8종목 재검증 (2026-11-06)</span><b>워크포워드 +0.01R</b><span><span class="conf c1">무작위 수준</span></span></div>`
     + `<div class="ind-row"><span class="ind-k">지표 상태</span><span>${pos}</span><span class="ind-dim">봉 마감 신호 · 다음 봉 시가 체결 · 수수료 0.1% · 2.5×ATR 손절</span></div>`;
 }
 
