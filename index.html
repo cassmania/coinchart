@@ -12,6 +12,7 @@
 <script src="./v41-analysis.js"></script>
 <script src="./indicator_engine.js?v=1"></script>
 <script src="./custom.js?v=1"></script>
+<script src="./trade-marks.js?v=1"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" rel="stylesheet">
 <style>
@@ -905,7 +906,7 @@ function renderAll() {
   const rows = getSignalRows(candles, tf);
   CS.setData(candles.map(c => ({ time:c.time, open:c.open, high:c.high, low:c.low, close:c.close })));
   trendMarks = tradeMarkers(candles);
-  if (indView === 'auto') CS.setMarkers(trendMarks);
+  if (indView === 'auto') applyTradeMarks(CS, trendMarks, candles);
   updateSignalBasis(rows, tf, activeExchange);
   safeRun('이동평균선', () => doMAs(rows));
   safeRun('볼린저밴드', () => doBB(20, 2, rows));
@@ -1845,25 +1846,10 @@ function renderTradePlan(signal, fundingRate=0){
 // 그 지표의 선·매매 타점·진입/손절/목표선을 그린다. 선물이라 롱·숏 모두.
 // 봉 마감 신호 → 다음 봉 시가 체결 · 수수료 0.1% · 2.5×ATR 손절 (engine.js 규칙 그대로)
 const INDC = { buy:'#12a150', sell:'#d64545', accent:'#c96442', blue:'#5b8ff9', violet:'#8b6fd6', teal:'#2aa198', gray:'#8a857c' };
-// 매수·매도·롱·숏 진입 마커: trading-chart 자체 지표 1위 '추세 합의'(백테스트 검증 상위)를
-// 같은 규칙(봉 마감 신호 → 다음 봉 시가, 2.5×ATR 손절, 수수료 0.1%, 롱·숏)으로 돌린 거래 기록.
+// 매수·매도·롱·숏 타점: trade-marks.js(추세 합의 거래 기록 + 겹치지 않는 글자 배치).
 // 메인 차트는 보조지표에서 특정 지표를 고르면 그 지표 마커로 바뀌고, 분할 차트는 항상 이 마커.
 let trendMarks = [];
-function tradeMarkers(rows) {
-  if (!window.Engine || !window.Custom || !rows || rows.length < 260) return [];
-  const n = rows.length, d = Custom.LIST[0], atr = Engine.atr(rows, 14);
-  const r = Custom.run(rows, atr, d.build(rows), 60, n, { mode:'both', signalEnd:n-1 }, d.id);
-  const px = v => v.toLocaleString('en-US', { maximumSignificantDigits:6 }), pct = v => (v>=0?'+':'')+(v*100).toFixed(1)+'%', ms = [];
-  const entry = (i, dir, p, txt) => ms.push({ time:rows[i].time, position:dir===1?'belowBar':'aboveBar', shape:dir===1?'arrowUp':'arrowDown', color:dir===1?INDC.buy:INDC.sell, text:txt+' '+px(p) });
-  r.trades.forEach(t => {
-    entry(t.entryIdx, t.dir, t.entry, t.dir===1?'매수·롱':'매도·숏');
-    const stop = t.reason === 'stop';
-    ms.push({ time:rows[t.exitIdx].time, position:t.dir===1?'aboveBar':'belowBar', shape:t.dir===1?'arrowDown':'arrowUp', color:stop?INDC.gray:(t.dir===1?INDC.sell:INDC.buy), text:(stop?'손절 ':t.dir===1?'롱 청산 ':'숏 청산 ')+px(t.exit)+' '+pct(t.pnl) });
-  });
-  if (r.open) entry(r.open.idx, r.open.dir, r.open.entry, r.open.dir===1?'롱 보유':'숏 보유');
-  if (r.pending) ms.push({ time:rows[n-1].time, position:r.pending.dir===1?'belowBar':'aboveBar', shape:'circle', color:INDC.accent, text:r.pending.type==='exit'?'청산 신호':r.pending.dir===1?'롱 진입 신호':'숏 진입 신호' });
-  return ms.sort((a, b) => a.time - b.time);
-}
+const tradeMarkers = rows => TradeMarks.tradeMarkers(rows), applyTradeMarks = (s, m, r) => TradeMarks.applyTradeMarks(s, m, r);
 let indView = 'auto', adaptiveKey = '', adaptiveCache = null, adaptiveSeries = [], adaptiveLines = [];
 
 function indConfidence(st) {
@@ -1880,7 +1866,7 @@ function clearAdaptive() {
   adaptiveSeries.forEach(x => { try { MC.removeSeries(x); } catch(e) {} });
   adaptiveLines.forEach(l => { try { CS.removePriceLine(l); } catch(e) {} });
   adaptiveSeries = []; adaptiveLines = [];
-  try { CS.setMarkers(trendMarks); } catch(e) {}
+  try { applyTradeMarks(CS, trendMarks, candles); } catch(e) {}
 }
 function doAdaptive(rows) {
   const card = document.getElementById('indCard'), sel = document.getElementById('indSel');
@@ -1937,7 +1923,7 @@ function doAdaptive(rows) {
   if (v.open && bars[v.open.idx]) ms.push({ time:bars[v.open.idx].time, position:L(v.open.dir)?'belowBar':'aboveBar', shape:L(v.open.dir)?'arrowUp':'arrowDown', color:L(v.open.dir)?INDC.buy:INDC.sell, text:L(v.open.dir)?'롱 보유':'숏 보유' });
   if (v.pending) ms.push({ time:bars.at(-1).time, position:v.pending.dir===1?'belowBar':'aboveBar', shape:'circle', color:INDC.accent, text:v.pending.type==='exit'?'청산 대기':v.pending.dir===1?'롱 대기':'숏 대기' });
   ms.sort((x,y) => x.time - y.time);
-  CS.setMarkers(indView === 'auto' ? trendMarks : ms);
+  if (indView === 'auto') applyTradeMarks(CS, trendMarks, candles); else applyTradeMarks(CS, ms, candles);
 
   // 진입·손절·목표선: 보유 중이거나 다음 봉 진입 대기일 때만
   const atrNow = a.context.atr || 0;
@@ -3548,7 +3534,7 @@ async function refreshOneSplitChart(item) {
     item.exchange = result.exchange;
     item.fetchedAt = result.fetchedAt;
     item.series.setData(result.candles.map(c => ({time:c.time, open:c.open, high:c.high, low:c.low, close:c.close})));
-    item.series.setMarkers(tradeMarkers(result.candles));
+    applyTradeMarks(item.series, tradeMarkers(result.candles), result.candles);
     applySplitAnalysis(item, item.analysisCandles);
     item.chart.timeScale().fitContent();
     if (badge){badge.textContent = `${result.exchange}·PERP`;badge.title=`${result.exchange} USDT 무기한 · ${new Date(result.fetchedAt).toISOString()}`;}
