@@ -904,6 +904,9 @@ function toD(vals, times) {
 function renderAll() {
   if (!candles.length) return;
   const rows = getSignalRows(candles, tf);
+  window.CoinchartState = { sym, tf, exchange: activeExchange };
+  const pf = priceFormatFor(candles.at(-1).close);
+  [CS, ma20S, ma60S, ma120S, ma200S, bbUS, bbMS, bbLS, vwapS, stUpS, stDnS, waveLineS].forEach(x => { try { x.applyOptions({ priceFormat: pf }); } catch (e) {} });
   CS.setData(candles.map(c => ({ time:c.time, open:c.open, high:c.high, low:c.low, close:c.close })));
   trendMarks = tradeMarkers(candles);
   if (indView === 'auto') applyTradeMarks(CS, trendMarks, candles);
@@ -1058,12 +1061,12 @@ function doStoch(k=14,dv=3,sm=3, rows=getSignalRows()) {
 }
 
 // ── 지지/저항 ─────────────────────────────────────────────
-function doSR(rows=getSignalRows(), tfArg=tf) {
-  if(rows.length<20){
-    if (selectedPanelIdx === 1) document.getElementById('srList').innerHTML='<div style="color:var(--b);font-size:11px">캔들 데이터가 더 필요합니다</div>';
-    return;
-  }
-  const last=rows.at(-1).close, d2=dp();
+// 지지·저항 계산(메인 차트·분할 차트·스냅샷 공용). 예전엔 메인(doSR)과 분할(calcSplitLevels)이 서로 다른 계산이라
+// 같은 코인·시간봉에서도 1·2·3차 선이 달랐고, 메인은 VPVR '표시구간' 모드에서 확대·스크롤할 때마다 선이 바뀌었다.
+// 이제 매물대 근거는 항상 최근 VPVR_FIXED_BARS 확정봉으로 고정한다(VPVR 막대 그림만 표시 모드를 따른다).
+function calcSrLevels(rows, tfArg=tf) {
+  if(!rows||rows.length<20) return {error:'캔들 데이터가 더 필요합니다'};
+  const last=rows.at(-1).close;
   const rec=rows.slice(-150), hs=rec.map(c=>c.high), ls=rec.map(c=>c.low);
 
   // ── 기준선 계산 ───────────────────────────────────────
@@ -1072,15 +1075,11 @@ function doSR(rows=getSignalRows(), tfArg=tf) {
   const swH30=Math.max(...hs.slice(-30)), swL30=Math.min(...ls.slice(-30));
   const swH100=Math.max(...hs.slice(-100)), swL100=Math.min(...ls.slice(-100));
 
-  // VPVR은 현재 모드의 표시구간 또는 최근 180개 확정봉을 사용합니다.
-  const profileRows=getVpvrRows(rows);
+  const profileRows=rows.slice(-VPVR_FIXED_BARS);
   const vp=calcVPVR(60,profileRows);
   const sorted_vp=[...vp].sort((a,b)=>b.vol-a.vol);
   const poc=sorted_vp[0];
-  if(!poc){
-    if (selectedPanelIdx === 1) document.getElementById('srList').innerHTML='<div style="color:var(--b);font-size:11px">매물대 계산 대기 중</div>';
-    return;
-  }
+  if(!poc) return {error:'매물대 계산 대기 중'};
   // Value Area / HVN — 매물대 경계가 POC 다음으로 강한 벽
   const zones=calcVpvrZones(60,profileRows);
   // 마지노선: 현재 조회구간 최저·최고. 이탈하면 다음 구조까지 공백이 생길 수 있습니다.
@@ -1181,14 +1180,21 @@ function doSR(rows=getSignalRows(), tfArg=tf) {
   const supRank=['1차 지지선','2차 지지선','3차 지지선'];
   const res3 = above.slice(0,3).map((l,i)=>({...l, rank:resRank[i], cls:'res'+(i+1)}));
   const sup3 = below.slice(0,3).map((l,i)=>({...l, rank:supRank[i], cls:'sup'+(i+1)}));
-  const pocItem = {price:poc.price, lbl:`VPVR POC · ${vpvrModeLabel(rows)}`, type:'poc', rank:'매물대', cls:'poc', score:9, hits:1, reasons:['거래량 최대 구간']};
+  const pocItem = {price:poc.price, lbl:`VPVR POC · 최근 ${profileRows.length}봉`, type:'poc', rank:'매물대', cls:'poc', score:9, hits:1, reasons:['거래량 최대 구간']};
+  if(!res3.length && !sup3.length) return {error:'근처 지지/저항선을 계산 중입니다'};
+  return {last, res3, sup3, poc:pocItem};
+}
 
-  // ── 사이드바 렌더 ────────────────────────────────────
-  const allItems=[...res3, pocItem, ...sup3];
-  if(!res3.length && !sup3.length){
-    if (selectedPanelIdx === 1) document.getElementById('srList').innerHTML='<div style="color:var(--b);font-size:11px">근처 지지/저항선을 계산 중입니다</div>';
+function doSR(rows=getSignalRows(), tfArg=tf) {
+  const sr=calcSrLevels(rows,tfArg);
+  window.CoinchartState.sr=sr;
+  if(sr.error){
+    if (selectedPanelIdx === 1) document.getElementById('srList').innerHTML=`<div style="color:var(--b);font-size:11px">${sr.error}</div>`;
     return;
   }
+  const {last,res3,sup3}=sr, pocItem=sr.poc, d2=dp();
+  // ── 사이드바 렌더 ────────────────────────────────────
+  const allItems=[...res3, pocItem, ...sup3];
   if (selectedPanelIdx === 1) document.getElementById('srList').innerHTML = allItems.map(l=>{
     const dist=((l.price-last)/last*100).toFixed(2);
     const pct=(l.price>last?'+':'')+dist+'%';
@@ -1248,13 +1254,13 @@ function doSR(rows=getSignalRows(), tfArg=tf) {
 
   // VPVR POC (금색 굵은 점선)
   srLines.push(CS.createPriceLine({
-    price:poc.price,
+    price:pocItem.price,
     color:'rgba(243,186,47,0.9)',
     lineWidth:2,
     lineStyle:1,
     axisLabelVisible:true,
     lineVisible:true,
-    title:`VPVR POC · ${vpvrModeLabel(rows)}`
+    title:pocItem.lbl
   }));
 
   // 차트 안에서도 어떤 색이 지지·저항인지 바로 확인할 수 있도록 범례를 갱신합니다.
@@ -1263,7 +1269,7 @@ function doSR(rows=getSignalRows(), tfArg=tf) {
     const chips=[];
     res3.forEach((l,i)=>chips.push(`<span style="color:${resColors[i]};background:rgba(10,15,28,.78);padding:2px 5px;border-radius:3px">━ ${l.rank} ${l.price.toFixed(d2)}</span>`));
     sup3.forEach((l,i)=>chips.push(`<span style="color:${supColors[i]};background:rgba(10,15,28,.78);padding:2px 5px;border-radius:3px">━ ${l.rank} ${l.price.toFixed(d2)}</span>`));
-    chips.push(`<span style="color:#c96442;background:rgba(10,15,28,.78);padding:2px 5px;border-radius:3px">┅ POC ${poc.price.toFixed(d2)}</span>`);
+    chips.push(`<span style="color:#c96442;background:rgba(10,15,28,.78);padding:2px 5px;border-radius:3px">┅ POC ${pocItem.price.toFixed(d2)}</span>`);
     legend.innerHTML=chips.join('');
   }
 }
@@ -1672,6 +1678,7 @@ function doWave(rows, symLabel=sym, tfLabel=tf, isMain=true){
     addLine(r.fib.c_100,'C파 1:1 목표','#00d4ff'); addLine(r.fib.c_1618,'C파 1.618','#00d4ff');
   }
   addLine(r.invalid,'무효화선','#d64545');
+  if (isMain) window.CoinchartState.wave = { invalid:r.invalid, type:r.type, bull:!!r.bull };
 
   // 3) 사이드바 브리핑 (스킬 출력 양식 축약판)
   if(!canWriteBox) return;
@@ -1849,8 +1856,16 @@ const INDC = { buy:'#12a150', sell:'#d64545', accent:'#c96442', blue:'#5b8ff9', 
 // 매수·매도·롱·숏 타점: trade-marks.js(추세 합의 거래 기록 + 겹치지 않는 글자 배치).
 // 메인 차트는 보조지표에서 특정 지표를 고르면 그 지표 마커로 바뀌고, 분할 차트는 항상 이 마커.
 let trendMarks = [];
+window.CoinchartState = {};
+// 차트 마커와 같은 '추세 합의' 거래 기록(보유·대기 상태 포함). tradeMarkers와 같은 인자로 돌린다.
+function trendPlanState(rows) {
+  const E = window.Engine, C = window.Custom;
+  if (!E || !C || !rows || rows.length < 260) return { open:null, pending:null };
+  const n = rows.length, d = C.LIST[0];
+  return C.run(rows, E.atr(rows, 14), d.build(rows), 60, n, { mode:'both', signalEnd:n - 1 }, d.id);
+}
 const tradeMarkers = rows => TradeMarks.tradeMarkers(rows), applyTradeMarks = (s, m, r) => TradeMarks.applyTradeMarks(s, m, r);
-let indView = 'auto', adaptiveKey = '', adaptiveCache = null, adaptiveSeries = [], adaptiveLines = [];
+let adaptivePlan = null, indView = 'auto', adaptiveKey = '', adaptiveCache = null, adaptiveSeries = [], adaptiveLines = [];
 
 function indConfidence(st) {
   if (!st || st.trades < 5) return { label:'표본 부족', cls:'c0' };
@@ -1876,7 +1891,7 @@ function doAdaptive(rows) {
   if (bars.length < 120) { clearAdaptive(); card.innerHTML = `<span class="ind-dim">검증에 120봉 이상 필요 — 현재 ${bars.length}봉</span>`; return; }
   // 실시간 틱마다 재계산하면 무겁다. 마감봉이 바뀔 때만 다시 돈다.
   const key = [sym, tf, indView, bars.length, bars.at(-2)?.time, currentTheme].join('|');
-  if (key === adaptiveKey) return;
+  if (key === adaptiveKey) { window.CoinchartState.plan = adaptivePlan; return; }
   adaptiveKey = key;
   let a;
   try { a = Engine.analyze(bars, { mode:'both' }); }
@@ -1890,7 +1905,9 @@ function doAdaptive(rows) {
   const v = row
     ? { auto:false, id:row.id, trades:row.trades, open:row.open, pending:row.pending, stats:row.oos }
     : { auto:true, id:a.chosen || a.rows[0].id, trades:a.adaptive.trades, open:a.adaptive.open, pending:a.adaptive.pending, stats:a.adaptive.stats };
-  const strat = Engine.STRAT_BY_ID[v.id], built = a.prep.built[v.id];
+  // 자동 모드는 차트 마커·진입선과 같은 '추세 합의'의 선(EMA50·200)을 그린다. 예전엔 국면별 자동 지표(예: 볼린저 반전)의 선이 겹쳐 그려졌다.
+  const tc = indView === 'auto' && window.Custom ? Custom.LIST[0] : null;
+  const strat = tc || Engine.STRAT_BY_ID[v.id], built = tc ? tc.build(bars) : a.prep.built[v.id];
 
   clearAdaptive();
   const data = arr => bars.map((b,i) => { const x = arr[i]; return x == null || !isFinite(x) ? { time:b.time } : { time:b.time, value:x }; });
@@ -1925,16 +1942,21 @@ function doAdaptive(rows) {
   ms.sort((x,y) => x.time - y.time);
   if (indView === 'auto') applyTradeMarks(CS, trendMarks, candles); else applyTradeMarks(CS, ms, candles);
 
-  // 진입·손절·목표선: 보유 중이거나 다음 봉 진입 대기일 때만
+  // 진입·손절·목표선: 보유 중이거나 다음 봉 진입 대기일 때만.
+  // 자동 모드는 차트 마커와 같은 '추세 합의' 거래에서 뽑는다. 예전엔 마커는 추세 합의, 선은 국면별 자동 지표라
+  // '숏 보유' 마커 옆에 '롱 진입' 선이 그려지는 일이 있었다(2026-11-07 BTC 일봉).
+  // 새 진입 신호가 보유 포지션보다 우선하고, 청산 신호가 나왔으면 선을 그리지 않는다.
+  const P = indView === 'auto' ? trendPlanState(bars) : v;
   const atrNow = a.context.atr || 0;
   let lv = null;
-  if (v.open) {
-    const d = v.open.dir, risk = Math.abs(v.open.entry - v.open.stop);
-    lv = { dir:d, entry:v.open.entry, stop:v.open.stop, tp1:v.open.entry + d*risk*1.5, tp2:v.open.entry + d*risk*3 };
-  } else if (v.pending && v.pending.type === 'enter' && atrNow > 0) {
-    const d = v.pending.dir, e = bars.at(-1).close, risk = 2.5 * atrNow;
-    lv = { dir:d, entry:e, stop:e - d*risk, tp1:e + d*risk*1.5, tp2:e + d*risk*3 };
+  if (P.pending && P.pending.type === 'enter' && atrNow > 0) {
+    const d = P.pending.dir, e = bars.at(-1).close, risk = 2.5 * atrNow;
+    lv = { state:'signal', dir:d, entry:e, stop:e - d*risk, tp1:e + d*risk*1.5, tp2:e + d*risk*3 };
+  } else if (P.open && !(P.pending && P.pending.type === 'exit')) {
+    const d = P.open.dir, risk = Math.abs(P.open.entry - P.open.stop);
+    lv = { state:'hold', since:bars[P.open.idx]?.time, dir:d, entry:P.open.entry, stop:P.open.stop, tp1:P.open.entry + d*risk*1.5, tp2:P.open.entry + d*risk*3 };
   }
+  window.CoinchartState.plan = adaptivePlan = lv ? { ...lv, src: indView === 'auto' ? '추세 합의' : strat.name } : { state: P.pending?.type === 'exit' ? 'exit' : 'none' };
   const pl = (price, color, title, style, width) => {
     if (Number.isFinite(price)) adaptiveLines.push(CS.createPriceLine({ price, color, lineWidth:width||1, lineStyle:style, axisLabelVisible:true, title }));
   };
@@ -1944,14 +1966,13 @@ function doAdaptive(rows) {
   }
 
   const conf = indConfidence(v.stats), c = a.context, d2 = dp();
-  const pos = v.open
-    ? `<b class="${L(v.open.dir)?'up':'dn'}">${L(v.open.dir)?'롱':'숏'} 보유</b> · 진입 ${v.open.entry.toFixed(d2)} · 평가 ${v.open.unreal>=0?'+':''}${(v.open.unreal*100).toFixed(2)}%`
-    : v.pending ? `<b class="acc">${v.pending.type==='exit'?'청산 신호':v.pending.dir===1?'롱 신호':'숏 신호'}</b> · 다음 봉 시가 체결 가정`
-    : '<b class="ind-dim">관망</b>';
+  const pos = (indView === 'auto' ? '추세 합의 · ' : '') + (P.pending ? `<b class="acc">${P.pending.type==='exit'?'청산 신호':P.pending.dir===1?'롱 신호':'숏 신호'}</b> · 다음 봉 시가 체결 가정`
+    : P.open ? `<b class="${L(P.open.dir)?'up':'dn'}">${L(P.open.dir)?'롱':'숏'} 보유</b> · 진입 ${P.open.entry.toFixed(d2)} · 평가 ${P.open.unreal>=0?'+':''}${(P.open.unreal*100).toFixed(2)}%`
+    : '<b class="ind-dim">관망</b>');
   card.innerHTML =
     `<div class="ind-row"><span class="ind-k">현재 국면</span><b>${esc(Engine.REGIME_NAME[a.regime] || '—')}</b><span class="ind-dim">ADX ${c.adx==null?'—':c.adx.toFixed(1)} · +DI ${c.pdi==null?'—':c.pdi.toFixed(1)} / −DI ${c.mdi==null?'—':c.mdi.toFixed(1)}</span></div>`
-    + `<div class="ind-row"><span class="ind-k">${v.auto?'자동 적용 지표':'선택 지표'}</span><b>${esc(strat.name)}</b><span class="ind-dim">${esc(strat.kind+' · '+strat.desc)}</span></div>`
-    + `<div class="ind-row"><span class="ind-k">워크포워드 검증 (미래 참조 없음)</span><b>${indStatsText(v.stats)}</b><span><span class="conf ${conf.cls}">${conf.label}</span></span></div>`
+    + `<div class="ind-row"><span class="ind-k">${tc?'차트 타점 지표 (자체 1위)':v.auto?'자동 적용 지표':'선택 지표'}</span><b>${esc(strat.name)}</b><span class="ind-dim">${esc(strat.kind+' · '+strat.desc)}</span></div>`
+    + `<div class="ind-row"><span class="ind-k">${tc?'2026-11-06 8종목 검증':'워크포워드 검증 (미래 참조 없음)'}</span><b>${tc?esc(tc.lab):indStatsText(v.stats)}</b><span><span class="conf ${tc?'c2':conf.cls}">${tc?'개발 구간 ≈0R':conf.label}</span></span></div>`
     + `<div class="ind-row"><span class="ind-k">8종목 재검증 (2026-11-06)</span><b>워크포워드 +0.01R</b><span><span class="conf c1">무작위 수준</span></span></div>`
     + `<div class="ind-row"><span class="ind-k">지표 상태</span><span>${pos}</span><span class="ind-dim">봉 마감 신호 · 다음 봉 시가 체결 · 수수료 0.1% · 2.5×ATR 손절</span></div>`;
 }
@@ -2457,17 +2478,8 @@ function calcSplitLevels(rows, tfArg=tf) {
   const times = rows.map(c => c.time);
   const last = rows.at(-1).close;
   const d2 = last >= 10000 ? 1 : last >= 100 ? 2 : last >= 1 ? 4 : 6;
-  const recent = rows.slice(-180);
-  const h30 = Math.max(...recent.slice(-30).map(c => c.high));
-  const l30 = Math.min(...recent.slice(-30).map(c => c.low));
-  const h100 = Math.max(...recent.slice(-100).map(c => c.high));
-  const l100 = Math.min(...recent.slice(-100).map(c => c.low));
-  const profile=CoinAnalysis.volumeProfile(recent,48);
-  const zones=CoinAnalysis.volumeProfileZones(profile,0.7);
-  const pivots=CoinAnalysis.classicPivots(CoinAnalysis.previousPeriodOhlc(rows,tfArg));
-  const atrValue=calcATR(rows,14);
-  const tolerance=Math.min(0.008,Math.max(0.0025,(atrValue/last)*0.35));
-
+  // 1·2·3차 선은 메인 차트와 같은 calcSrLevels로 계산한다(예전엔 별도 계산이라 같은 코인·시간봉에서 값이 달랐다).
+  const sr = calcSrLevels(rows, tfArg);
   // 볼린저밴드(20, 2σ)
   const bbUp = [], bbLo = [];
   for (let i = 19; i < closes.length; i++) {
@@ -2479,47 +2491,14 @@ function calcSplitLevels(rows, tfArg=tf) {
       bbLo.push({time:times[i], value:avg-2*std});
     }
   }
-  const maValues=[20,60,120,200].map(period=>({period,value:ma(closes,period).at(-1)}));
-  const resistance=[], support=[];
-  const add=(list,price,source,weight=1)=>{
-    if(!Number.isFinite(price)||price<=0)return;
-    if(list===resistance&&price<=last)return;
-    if(list===support&&price>last)return;
-    const existing=list.find(item=>Math.abs(item.price-price)/price<tolerance);
-    if(existing){
-      const total=existing.weight+weight;
-      existing.price=(existing.price*existing.weight+price*weight)/total;
-      existing.weight=total;
-      if(!existing.sources.includes(source))existing.sources.push(source);
-      return;
-    }
-    list.push({price,source,sources:[source],weight});
-  };
-
-  add(resistance,h30,'최근 30봉 고점',4); add(resistance,h100,'최근 100봉 고점',5);
-  add(support,l30,'최근 30봉 저점',4); add(support,l100,'최근 100봉 저점',5);
-  if(pivots){
-    add(resistance,pivots.r1,`${pivots.label} R1`,4); add(resistance,pivots.r2,`${pivots.label} R2`,3); add(resistance,pivots.r3,`${pivots.label} R3`,2);
-    add(support,pivots.s1,`${pivots.label} S1`,4); add(support,pivots.s2,`${pivots.label} S2`,3); add(support,pivots.s3,`${pivots.label} S3`,2);
-  }
-  if(zones){
-    add(resistance,zones.vah,'VPVR VAH',5); add(resistance,zones.val,'VPVR VAL',5);
-    add(support,zones.val,'VPVR VAL',5); add(support,zones.vah,'VPVR VAH',5);
-    zones.hvn.forEach(price=>{add(resistance,price,'VPVR HVN',4);add(support,price,'VPVR HVN',4);});
-  }
-  const bbUpLast=bbUp.at(-1)?.value, bbLoLast=bbLo.at(-1)?.value;
-  add(resistance,bbUpLast,'BB 상단',2); add(support,bbLoLast,'BB 하단',2);
-  maValues.forEach(item=>{add(resistance,item.value,`MA${item.period}`,item.period>=120?4:3);add(support,item.value,`MA${item.period}`,item.period>=120?4:3);});
-
-  const poc=zones?.poc;
   const resColors=['#d64545','#ff8a3d','#ffc857'];
   const supColors=['#12a150','#23a6ff','#7c5cff'];
-  const res3=resistance.filter(item=>!poc||Math.abs(item.price-poc)/poc>=tolerance).sort((a,b)=>a.price-b.price).slice(0,3)
-    .map((item,index)=>({...item,title:`${index+1}차 저항`,color:resColors[index],label:`${index+1}차 저항 · ${item.sources.join('+')} ${item.price.toFixed(d2)}`}));
-  const sup3=support.filter(item=>!poc||Math.abs(item.price-poc)/poc>=tolerance).sort((a,b)=>b.price-a.price).slice(0,3)
-    .map((item,index)=>({...item,title:`${index+1}차 지지`,color:supColors[index],label:`${index+1}차 지지 · ${item.sources.join('+')} ${item.price.toFixed(d2)}`}));
-  const pocLevel=Number.isFinite(poc)?[{price:poc,title:'매물대 POC',color:'#c96442',style:2,label:`매물대 POC · 최근 ${recent.length}봉 ${poc.toFixed(d2)}`}]:[];
-  const levels=[...res3,...pocLevel,...sup3];
+  const lv=(l,i,kind,colors)=>({price:l.price,title:`${i+1}차 ${kind}`,color:colors[i],sources:l.reasons,label:`${i+1}차 ${kind} · ${l.reasons.join('+')} ${l.price.toFixed(d2)}`});
+  const levels=sr.error?[]:[
+    ...sr.res3.map((l,i)=>lv(l,i,'저항',resColors)),
+    {price:sr.poc.price,title:'매물대 POC',color:'#c96442',style:2,sources:sr.poc.reasons,label:`매물대 POC · ${sr.poc.lbl.replace('VPVR POC · ','')} ${sr.poc.price.toFixed(d2)}`},
+    ...sr.sup3.map((l,i)=>lv(l,i,'지지',supColors))
+  ];
   // 시간봉별 기준을 명시한 앵커 VWAP
   const vwap = toD(CoinAnalysis.anchoredVwap(rows,tfArg), times);
   return {
@@ -2528,7 +2507,7 @@ function calcSplitLevels(rows, tfArg=tf) {
     ma60: toD(ma(closes,60), times),
     ma120: toD(ma(closes,120), times),
     ma200: toD(ma(closes,200), times),
-    bbUp, bbLo, vwap, profileLabel:`VP 최근 ${recent.length}봉`
+    bbUp, bbLo, vwap, profileLabel:`VP 최근 ${Math.min(rows.length,VPVR_FIXED_BARS)}봉`
   };
 }
 
@@ -2569,6 +2548,12 @@ let selectedPanelIdx = 1;
 
 // MACD처럼 가격 단위 값은 4자리 고정이면 저가 코인에서 0.0000이 된다.
 function fmtOsc(v) { return v.toFixed(dpFor(Math.abs(v) || 1)); }
+// 차트 가격축·선 라벨 자릿수. 예전엔 지정이 없어 lightweight-charts 기본값(소수 2자리)이라
+// XRP 1.2107·1.2141이 둘 다 1.21로, PEPE 같은 저가 코인은 0.00으로 표시됐다.
+function priceFormatFor(price) {
+  const precision = dpFor(price);
+  return { type:'price', precision, minMove: Number((10 ** -precision).toFixed(precision)) };
+}
 function dpFor(price) {
   const a = Math.abs(price);
   if (a >= 10000) return 1;
@@ -3533,6 +3518,7 @@ async function refreshOneSplitChart(item) {
     item.analysisCandles = getSignalRows(result.candles,item.tf);
     item.exchange = result.exchange;
     item.fetchedAt = result.fetchedAt;
+    if (result.candles.length) item.series.applyOptions({ priceFormat: priceFormatFor(result.candles.at(-1).close) });
     item.series.setData(result.candles.map(c => ({time:c.time, open:c.open, high:c.high, low:c.low, close:c.close})));
     applyTradeMarks(item.series, tradeMarkers(result.candles), result.candles);
     applySplitAnalysis(item, item.analysisCandles);
