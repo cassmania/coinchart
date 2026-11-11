@@ -6,26 +6,48 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 64 64%22><text y=%2252%22 font-size=%2252%22>📈</text></svg>">
 <title>제미나이 차트</title>
 <script src="./vendor/lightweight-charts.js"></script>
-<script src="./analysis-engine.js?v=20260905"></script>
-<script src="./backtest/results/summary.js?v=20260905"></script>
+<script src="./analysis-engine.js?v=20261111"></script>
 <script src="./v3-analysis.js"></script>
 <script src="./v41-analysis.js"></script>
 <script src="./indicator_engine.js?v=1"></script>
 <script src="./custom.js?v=1"></script>
-<script src="./trade-marks.js?v=1"></script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&display=swap" rel="stylesheet">
+<script src="./trade-marks.js?v=2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-:root{--bg:#1f1e1d;--bg2:#262624;--bg3:#30302e;--bd:#3e3d39;--tx:#ece9e1;--tx2:#a29d92;--tx3:#6b675f;--tx-strong:#faf9f5;--g:#3fb87a;--r:#e5675e;--b:#d97757;--y:#d4a24c;--p:#a48be0;--c:#4fb3a9;
-  --font-h:'Source Serif 4','Iowan Old Style',Georgia,'Malgun Gothic',serif;--font-b:'Inter','Pretendard','Malgun Gothic',-apple-system,sans-serif;}
-body.light-mode{--bg:#f5f4ee;--bg2:#fbfaf6;--bg3:#efede5;--bd:#e3dfd3;--tx:#1f1e1b;--tx2:#74706a;--tx3:#a8a296;--tx-strong:#141413;--g:#12a150;--r:#d64545;--b:#c96442;--y:#b7791f;--p:#8b6fd6;--c:#2aa198;}
+/* 2026-11-11 Apple 색으로 통일(모의 거래소·터미널과 같은 체계). 상승·하락·지표 색(--g --r --y --p --c)과 지지·저항선 색은 그대로 둔다 */
+:root{--bg:#000;--bg2:#1c1c1e;--bg3:#2c2c2e;--bd:#38383a;--tx:#f5f5f7;--tx2:#98989d;--tx3:#636366;--tx-strong:#fff;--g:#3fb87a;--r:#e5675e;--b:#0a84ff;--y:#d4a24c;--p:#a48be0;--c:#4fb3a9;
+  --font-h:-apple-system,BlinkMacSystemFont,'SF Pro Display','Apple SD Gothic Neo','Pretendard Variable',Pretendard,'Malgun Gothic','Segoe UI',sans-serif;--font-b:-apple-system,BlinkMacSystemFont,'SF Pro Text','Apple SD Gothic Neo','Pretendard Variable',Pretendard,'Malgun Gothic','Segoe UI',sans-serif;}
+body.light-mode{--bg:#f5f5f7;--bg2:#fff;--bg3:#f0f0f3;--bd:#e5e5ea;--tx:#1d1d1f;--tx2:#6e6e73;--tx3:#a1a1a6;--tx-strong:#000;--g:#12a150;--r:#d64545;--b:#0071e3;--y:#b7791f;--p:#8b6fd6;--c:#2aa198;}
 html,body{height:100%;background:var(--bg);color:var(--tx);font-family:var(--font-b);font-size:13px;overflow:hidden;transition:background-color .15s,color .15s;}
 /* ── 레이아웃 ── */
 .app{display:flex;flex-direction:column;height:100vh;}
 .topbar{display:flex;align-items:center;gap:6px;padding:7px 12px;background:var(--bg2);border-bottom:1px solid var(--bd);flex-shrink:0;flex-wrap:wrap;box-shadow:0 1px 2px rgba(31,30,27,.06);}
 body.light-mode .topbar{box-shadow:0 2px 8px rgba(30,40,90,.08);}
 .logo{font-family:var(--font-h);font-size:17px;font-weight:600;color:var(--b);white-space:nowrap;}
+/* 신호 우선: 차트 위 판단 카드 3장(방향 점수 · 실행 규칙 · 지표 신뢰도) */
+.judge{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:8px 10px;flex-shrink:0;background:var(--bg);}
+.judge:empty{display:none;}
+.jcard{background:var(--bg2);border-radius:14px;box-shadow:0 0 0 .5px var(--bd);padding:10px 14px;min-width:0;font-variant-numeric:tabular-nums;}
+.jcard .muted{color:var(--tx2);font-size:12px;margin:0;}
+.jt{font-size:11px;font-weight:600;color:var(--tx2);margin-bottom:5px;}
+.jrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.jbig{font-size:26px;font-weight:700;letter-spacing:-.03em;line-height:1;}
+.jbig.up,.jstate.up{color:var(--g);}.jbig.down,.jstate.down{color:var(--r);}
+.jstate{font-size:16px;font-weight:700;letter-spacing:-.015em;}
+.judge .chip{display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:10.5px;font-weight:600;background:var(--bg3);white-space:nowrap;}
+.judge .chip.up{color:var(--g);background:color-mix(in srgb,var(--g) 14%,transparent);}.judge .chip.down{color:var(--r);background:color-mix(in srgb,var(--r) 13%,transparent);}
+.gauge{height:6px;border-radius:999px;position:relative;margin:9px 0 4px;background:linear-gradient(90deg,color-mix(in srgb,var(--r) 22%,transparent) 0 32.8%,var(--bg3) 32.8% 67.2%,color-mix(in srgb,var(--g) 22%,transparent) 67.2%);}
+.gauge i{position:absolute;top:-4px;left:0;width:4px;height:14px;margin-left:-2px;border-radius:2px;background:var(--tx);transition:left .4s cubic-bezier(.2,.8,.2,1);}
+.gscale{display:flex;justify-content:space-between;font-size:9.5px;color:var(--tx2);}
+.jkv{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;color:var(--tx2);padding-top:4px;}
+.jkv b{color:var(--tx);font-weight:600;text-align:right;}
+.jck{display:inline-flex;gap:5px;align-items:center;padding:1px 10px 1px 0;font-size:12px;}
+.jck i{width:15px;height:15px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:10px;font-weight:700;flex:none;background:var(--bg3);color:var(--tx2);}
+.jck i.y{background:color-mix(in srgb,var(--g) 16%,transparent);color:var(--g);}
+.jtr{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2.5px 0;font-size:12px;}
+.jfoot{display:none;}
+@media (max-width:900px){.judge{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding-left:10px;scrollbar-width:none;}.judge::-webkit-scrollbar{display:none;}.jcard{flex:0 0 84%;scroll-snap-align:start;}}
+@media (prefers-reduced-motion:reduce){.gauge i{transition:none;}}
 .main{display:flex;flex:1;overflow:hidden;}
 .main.split-mode{flex-direction:row;overflow:hidden;}
 .main.split-mode .sidebar{width:238px;display:flex;flex-direction:column;max-height:none;border-right:1px solid var(--bd);border-bottom:none;}
@@ -88,7 +110,8 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
 .trust.ok{color:var(--y);background:color-mix(in srgb,var(--y) 15%,transparent);}
 .trust.rnd{color:var(--tx2);background:var(--bg3);}
 .trust.bad{color:var(--r);background:color-mix(in srgb,var(--r) 13%,transparent);}
-.trust-box summary{cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:6px;}
+.trust-box summary .sb-ttl{white-space:nowrap;}
+.trust-box summary{flex-wrap:wrap;row-gap:4px;cursor:pointer;list-style:none;display:flex;align-items:center;justify-content:space-between;gap:6px;}
 .trust-box summary::-webkit-details-marker{display:none;}
 .trust-tbl{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px;}
 .trust-tbl td{padding:5px 2px;border-top:1px solid var(--bd);vertical-align:top;color:var(--tx);}
@@ -365,15 +388,17 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
   <span style="margin-left:auto;font-size:10px;color:#c96442;font-weight:600" id="apiLbl">연결 중...</span>
 </div>
 
+<section class="judge" id="judge" aria-label="신호 요약"></section>
+
 <div class="main" id="mainLayout">
 
 <!-- 사이드바 -->
 <div class="sidebar">
 <div class="sb-scroll">
-  <details class="sb-sec trust-box" open>
-    <summary><div class="sb-ttl" style="margin-bottom:0">지표 신뢰도 · 백테스트</div><span class="trust bad" title="이 화면의 지표·신호를 차트 코드 그대로 과거 데이터에 돌린 결과">대부분 무작위 수준</span></summary>
-    <table class="trust-tbl"><tr><td>과매수·과매도 (RSI·CCI·스토캐)<small>반전 방향 적중이 기준보다 +2~7%p. 반대 신호까지 들고 있으면 −0.08~−0.18R</small></td><td><span class="trust ok">방향만 참고</span></td></tr><tr><td>유동성 스윕 반전<small>적중 +1~4%p · 매매로는 −0.06~−0.13R</small></td><td><span class="trust ok">방향만 참고</span></td></tr><tr><td>종합 시그널<small>적중 46~48% (기준 50%) · 점수가 높아도 더 맞지 않음</small></td><td><span class="trust bad">기준보다 낮음</span></td></tr><tr><td>실행 규칙 롱<small>4시간봉 4년: +0.47R, 무작위 진입도 +0.48R</small></td><td><span class="trust rnd">무작위 수준</span></td></tr><tr><td>보조지표 자동<small>과거로만 고른 지표의 다음 구간 성과 +0.01R</small></td><td><span class="trust rnd">무작위 수준</span></td></tr><tr><td>엘리엇 파동<small>방향 적중 ≈50% · 확신도 점수와 적중률 무관</small></td><td><span class="trust rnd">무작위 수준</span></td></tr><tr><td>구조 돌파 (AI MASTER)<small>돌파 뒤 되밀림이 더 잦음 (−2~−6%p)</small></td><td><span class="trust bad">기준보다 낮음</span></td></tr><tr><td>MA 배열·슈퍼트렌드·MACD<small>적중이 기준과 ±2%p 이내</small></td><td><span class="trust rnd">무작위 수준</span></td></tr><tr><td>지지·저항선<small>지킴률 48~51% = 1 ATR 옮긴 가짜 선과 같음</small></td><td><span class="trust rnd">무작위 수준</span></td></tr></table>
-    <div class="trust-note">2026-11-06 검증 · 이 차트 코드 그대로 · 바이낸스 8종목 × 1시간~일봉(앞·뒤 기간 나눠 확인) + 4시간봉 4년치 · 신호 다음 봉 진입 · 손절 2.5×ATR · 수수료 0.1% · 적중 기준 = 같은 기간 아무 때나 찍었을 때 · 15분봉은 모든 지표 손실 · 과거 결과이며 미래를 보장하지 않습니다</div>
+  <details class="sb-sec trust-box">
+    <summary><div class="sb-ttl" style="margin-bottom:0">지표 신뢰도 · 백테스트</div><span class="trust ok" title="이 화면의 지표·신호를 차트 코드 그대로 과거 데이터에 돌린 결과. 2026-11-10 종합 시그널과 실행 규칙을 다시 만들었습니다">2개 개선 · 나머지 참고용</span></summary>
+    <table class="trust-tbl"><tr><td>종합 시그널 (방향 점수)<small>24봉 뒤 적중 52.3% · 평소 49.5% · 예전 방식 46.6%. 처음 보는 종목에서도 +2.3%p</small></td><td><span class="trust ok">기준보다 높음</span></td></tr><tr><td>실행 규칙 · 차트 타점<small>+0.27R · 무작위 진입 +0.05R · 승률 29% (크게 이기고 자주 짐)</small></td><td><span class="trust ok">기준보다 높음</span></td></tr><tr><td>과매수·과매도 (RSI·CCI·스토캐)<small>반전 방향 적중이 기준보다 +2~7%p. 반대 신호까지 들고 있으면 −0.08~−0.18R</small></td><td><span class="trust ok">방향만 참고</span></td></tr><tr><td>유동성 스윕 반전<small>적중 +1~4%p · 매매로는 −0.06~−0.13R</small></td><td><span class="trust ok">방향만 참고</span></td></tr><tr><td>보조지표 자동<small>과거로만 고른 지표의 다음 구간 성과 +0.01R</small></td><td><span class="trust rnd">무작위 수준</span></td></tr><tr><td>엘리엇 파동<small>방향 적중 ≈50% · 확신도 점수와 적중률 무관</small></td><td><span class="trust rnd">무작위 수준</span></td></tr><tr><td>구조 돌파 (AI MASTER)<small>돌파 뒤 되밀림이 더 잦음 (−2~−6%p)</small></td><td><span class="trust bad">기준보다 낮음</span></td></tr><tr><td>MA 배열·슈퍼트렌드·MACD<small>적중이 기준과 ±2%p 이내</small></td><td><span class="trust rnd">무작위 수준</span></td></tr><tr><td>지지·저항선<small>지킴률 48~51% = 1 ATR 옮긴 가짜 선과 같음</small></td><td><span class="trust rnd">무작위 수준</span></td></tr></table>
+    <div class="trust-note">위 두 줄은 2026-11-10 검증: 가중치를 정한 구간(8종목 4시간봉 2022-09~2024-10) 밖의 기간·봉·종목 96개 시계열, 그중 8종목은 마지막에 한 번만 확인. 차이가 작아(2~4%p) 단독 매매 근거로는 부족합니다. 나머지는 2026-11-06 검증 · 이 차트 코드 그대로 · 바이낸스 8종목 × 1시간~일봉(앞·뒤 기간 나눠 확인) + 4시간봉 4년치 · 신호 다음 봉 진입 · 손절 2.5×ATR · 수수료 0.1% · 적중 기준 = 같은 기간 아무 때나 찍었을 때 · 15분봉은 모든 지표 손실 · 과거 결과이며 미래를 보장하지 않습니다</div>
   </details>
   <div class="sb-sec">
     <div class="sb-ttl-row"><div class="sb-ttl" style="margin-bottom:0">지지·저항선<span class="trust rnd" title="1차 지지·저항에 닿은 뒤 지켜진 비율 48~51% — 0.5~1.5 ATR 옮긴 가짜 선(46~52%)과 같음">지킴률≈무작위</span></div><span class="sb-sel-sym" id="sbSelSym">메인</span></div>
@@ -418,7 +443,7 @@ body.light-mode .panel-tag{box-shadow:0 2px 6px rgba(30,40,90,.12);}
     <div id="futuresSource" style="margin-top:5px;font-size:10px;line-height:1.4;color:var(--tx3)">출처 확인 중</div>
   </div>
   <div class="sb-sec">
-    <div class="sb-ttl">종합 시그널<span class="trust bad" title="상승/하락 우위가 뜬 뒤 6·24봉 방향 적중 46~48% — 아무 때나 찍었을 때(50%)보다 낮음. 점수 크기와 결과도 무관">적중 46~48%</span></div>
+    <div class="sb-ttl">종합 시그널<span class="trust ok" title="우위가 뜬 봉의 24봉 뒤 방향 적중 52.3% (평소 49.5%, 예전 방식 46.6%). 학습에 쓰지 않은 기간·봉·종목으로 확인">적중 52% · 평소 49.5%</span></div>
     <div class="sig-row" id="sigRow"><span class="sig neutral">분석 중...</span></div>
   </div>
   <div class="sb-sec">
@@ -791,8 +816,8 @@ let currentTheme = (() => { try { return localStorage.getItem('theme') || 'light
 
 function chartColors() {
   return currentTheme === 'light'
-    ? { bg:'#fbfaf6', text:'#74706a', grid:'#eeebe2', border:'#e3dfd3' }
-    : { bg:'#262624', text:'#a29d92', grid:'#30302e', border:'#3e3d39' };
+    ? { bg:'#ffffff', text:'#6e6e73', grid:'#f0f0f3', border:'#e5e5ea' }
+    : { bg:'#1c1c1e', text:'#98989d', grid:'#2c2c2e', border:'#38383a' };
 }
 
 function applyThemeClass() {
@@ -1807,45 +1832,42 @@ function renderCompositeSignal(signal, fundingRate=0){
   const cls=signal.direction==='LONG_BIAS'?'long':signal.direction==='SHORT_BIAS'?'short':'neutral';
   const icon=signal.direction==='LONG_BIAS'?'🟢':signal.direction==='SHORT_BIAS'?'🔴':'⚪';
   const signed=value=>(value>=0?'+':'')+value.toFixed(2);
-  const a=signal.axes;
-  const audit=window.COINCHART_BACKTEST;
-  const auditNumber=(value,digits=3)=>Number.isFinite(value)?value.toFixed(digits):'산출 불가';
-  // 이 전략은 Bybit 일봉만 평가했다. 차트 시간봉과 무관하게 검증 대상을 명시한다.
-  const auditTitle=audit
-    ? `Bybit USDT 무기한 일봉 · 최근 ${audit.window}확정봉 · ${audit.endExclusiveUtc.slice(0,10)} UTC 미만 · 홀드아웃 ${audit.sample}건 · 승률 ${auditNumber(audit.winRate===null?null:audit.winRate*100,1)}% · PF ${auditNumber(audit.profitFactor)} · 평균 ${auditNumber(audit.averageR)}R · 최대낙폭 ${auditNumber(audit.maxDrawdownR)}R · 진입 임계값 ${audit.threshold} · 펀딩 미포함`
-    : '백테스트 요약을 불러오지 못했습니다';
-  const auditText=audit ? `일봉 검증 ${audit.sample}건 · PF ${auditNumber(audit.profitFactor)} · ${audit.verdict}` : '검증 결과 확인 불가';
-  let html=`<span class="sig ${cls}">${icon} ${signal.label}</span>`
-    +` <span class="sig neutral" title="각 축은 -1~+1, 네 축은 동일 비중입니다">`
-    +`추세 ${signed(a.trend)} · 모멘텀 ${signed(a.momentum)} · 변동성 ${signed(a.volatility)} · 거래량 ${signed(a.volume)}</span>`
-    +` <a class="sig neutral" href="./backtest/results/signal-report.md" target="_blank" rel="noopener" title="${auditTitle}">${auditText}</a>`;
+  const k=signal.contrib;
+  // 2026-11-10 검증(사이트-백테스트-비교/upgrade-final.js): 학습에 쓰지 않은 기간·봉·종목 96개 시계열, 24봉 뒤 방향
+  const audit=signal.strength==='strong' ? '검증 적중 53.5% · 평소 49.5%'
+    : signal.strength==='weak' ? '검증 적중 52.3% · 평소 49.5%' : '관망 구간 · 평소와 같음';
+  let html=`<span class="sig ${cls}">${icon} ${signal.label} ${signed(signal.score)}</span>`
+    +` <span class="sig neutral" title="방향 점수 = 버티는 힘(RSI·MACD·슈퍼트렌드·200이평 위) + 과열 조정(너무 올랐으면 빼고 너무 내렸으면 더함: 이평 간격 벌어짐·볼린저 끝·거래량 실린 봉). ±0.20부터 약한 우위, ±0.29부터 우위">`
+    +`버티는 힘 ${signed(k.follow)} · 과열 조정 ${signed(k.stretch)}</span>`
+    +` <span class="sig neutral" title="24봉 뒤 종가가 신호 방향으로 간 비율. 바이낸스 24종목 × 1시간·4시간·12시간·일봉, 가중치를 정한 구간(8종목 4시간봉 2022-09~2024-10)은 제외. 예전 종합 점수는 같은 시험에서 46.6%. 과거 결과이며 미래를 보장하지 않습니다">${audit}</span>`;
   // 펀딩비는 방향 점수에 넣지 않고 과열 문맥으로만 보여줍니다.
   if(fundingRate>0.05) html+=' <span class="sig neutral">펀딩비 과열↑(참고)</span>';
   if(fundingRate<-0.05) html+=' <span class="sig neutral">펀딩비 과열↓(참고)</span>';
-  return html+renderTradePlan(signal,fundingRate);
+  return html+renderTradePlan(signal);
 }
 
-// 2026-10-30 백테스트에서 +0.25R로 보였던 실행 규칙. 2026-11-06 재검증 결과 같은 기간 무작위 진입(+0.48R)과 차이가 없어
-// (상승장 수익이 대부분) 화면에는 참고용으로만 표시한다.
-// 강한 우위(+0.35) + ADX14 ≥ 25 + 펀딩비 < 0.03%일 때 롱, 강한 숏 우위(−0.35)가 나올 때까지 보유, 손절 2.5×ATR, 최대 100봉.
-// 숏은 어떤 조합에서도 기대값이 0 근처라 참고로만 보여준다. 단순 추세 추종보다 낫다는 증거는 아직 없다.
+// 실행 규칙 (2026-11-10): 추세 합의(custom.js 1위 — EMA50 위·EMA20>50·슈퍼트렌드·MACD·EMA200 위 5개 일치 + ADX≥20)가
+// 새로 충족된 봉에서, 방향 점수가 같은 쪽(롱 ≥0, 숏 ≤0)일 때만 진입. 반대로 4개 이상 돌아서면 청산, 손절 2.5×ATR.
+// 학습에 쓰지 않은 96개 시계열: +0.27R(승률 29%) · 추세 합의만 +0.20R · 무작위 진입 +0.05R (upgrade-final.js [5]).
 function attachTradePlan(signal, rows){
-  if(!signal?.ready || !window.Engine || !rows?.length) return signal;
+  if(!signal?.ready || !window.Engine || !window.Custom || !rows || rows.length<210) return signal;
   const li=rows.length-1;
-  signal.plan={ adx:Engine.adx(rows,14).adx[li], atr:Engine.atr(rows,14)[li], close:rows[li].close };
+  signal.plan={ agree:Custom.LIST[0].build(rows).osc.data[li], adx:Engine.adx(rows,14).adx[li], atr:Engine.atr(rows,14)[li], close:rows[li].close };
   return signal;
 }
-function renderTradePlan(signal, fundingRate=0){
+function renderTradePlan(signal){
   const p=signal.plan;
-  if(!p) return '';
-  const s=signal.score, tip='title="2026-11-06 재검증(바이낸스 8종목 4시간봉 4년): 강한 우위 +0.35 · ADX 25 이상 롱은 무작위 진입과 같은 성과(상승기 +0.47R vs +0.48R, 하락기 −0.01R vs −0.03R) · 펀딩비 조건 제외 · 참고용"';
-  if(s<=-0.35) return ` <span class="sig neutral" ${tip}>실행 규칙: 롱 보유 중이면 청산 · 숏은 참고만</span>`;
-  if(s<0.35) return ` <span class="sig neutral" ${tip}>실행 규칙: 대기 (점수 ${s.toFixed(2)}, 롱은 +0.35부터)</span>`;
-  const why=[];
-  if(!(p.adx>=25)) why.push(`ADX ${Number.isFinite(p.adx)?p.adx.toFixed(1):'—'} &lt; 25`);
-  if(fundingRate>=0.03) why.push(`펀딩비 ${fundingRate.toFixed(3)}% ≥ 0.03%`);
-  if(why.length) return ` <span class="sig neutral" ${tip}>실행 규칙: 롱 보류 (${why.join(' · ')})</span>`;
-  return ` <span class="sig neutral" ${tip}>실행 규칙: 롱 조건 충족 · 손절 약 ${(p.close-2.5*p.atr).toFixed(dp())} · 검증상 무작위 수준</span>`;
+  if(!p || p.agree==null) return '';
+  const s=signal.score, sc=(s>=0?'+':'')+s.toFixed(2), adx=Number.isFinite(p.adx)?p.adx.toFixed(0):'—';
+  const tip='title="2026-11-10 검증(학습에 쓰지 않은 기간·봉·종목 96개 시계열, 수수료 포함): 추세 합의 + 방향 점수 같은 쪽 +0.27R · 추세 합의만 +0.20R · 무작위 진입 +0.05R. 승률 29% — 열 번 중 일곱 번은 손절이고 남은 세 번이 크게 이기는 방식. 과거 결과이며 미래를 보장하지 않습니다"';
+  const dir=p.agree===5?1:p.agree===-5?-1:0, side=dir===1?'롱':'숏';
+  if(!dir){
+    const exit=p.agree<=-3?' · 롱 보유 중이면 청산':p.agree>=3?' · 숏 보유 중이면 청산':'';
+    return ` <span class="sig neutral" ${tip}>실행 규칙: 대기 (추세 합의 ${p.agree>0?'+':''}${p.agree}/5)${exit}</span>`;
+  }
+  if(!(p.adx>=20)) return ` <span class="sig neutral" ${tip}>실행 규칙: ${side} 보류 (ADX ${adx} &lt; 20)</span>`;
+  if(dir*s<0) return ` <span class="sig neutral" ${tip}>실행 규칙: ${side} 보류 (방향 점수 ${sc} 반대)</span>`;
+  return ` <span class="sig ${dir===1?'long':'short'}" ${tip}>실행 규칙: ${side} 조건 충족 · 손절 약 ${(p.close-dir*2.5*p.atr).toFixed(dp())} · 검증 +0.27R</span>`;
 }
 
 // ── 보조지표 (trading-chart engine.js 이식) ────────────────────────────
@@ -1861,10 +1883,13 @@ window.CoinchartState = {};
 function trendPlanState(rows) {
   const E = window.Engine, C = window.Custom;
   if (!E || !C || !rows || rows.length < 260) return { open:null, pending:null };
-  const n = rows.length, d = C.LIST[0];
-  return C.run(rows, E.atr(rows, 14), d.build(rows), 60, n, { mode:'both', signalEnd:n - 1 }, d.id);
+  const n = rows.length, d = C.LIST[0], built = d.build(rows), gate = dirGate(rows);
+  built.long = built.long.map((v, i) => v && gate(i, 1)); built.short = built.short.map((v, i) => v && gate(i, -1));
+  return C.run(rows, E.atr(rows, 14), built, 60, n, { mode:'both', signalEnd:n - 1 }, d.id);
 }
-const tradeMarkers = rows => TradeMarks.tradeMarkers(rows), applyTradeMarks = (s, m, r) => TradeMarks.applyTradeMarks(s, m, r);
+// 추세 합의 진입은 그 봉의 방향 점수가 같은 쪽일 때만(실행 규칙과 동일, 2026-11-10 검증 +0.27R · 추세 합의만 +0.20R)
+const dirGate = rows => (i, dir) => { const g = CoinAnalysis.compositeSignal(rows.slice(0, i + 1)); return g.ready && dir * g.score >= 0; };
+const tradeMarkers = rows => TradeMarks.tradeMarkers(rows, dirGate(rows)), applyTradeMarks = (s, m, r) => TradeMarks.applyTradeMarks(s, m, r);
 let adaptivePlan = null, indView = 'auto', adaptiveKey = '', adaptiveCache = null, adaptiveSeries = [], adaptiveLines = [];
 
 function indConfidence(st) {
@@ -1979,7 +2004,61 @@ function doAdaptive(rows) {
 
 function doSignal(rows=getSignalRows()){
   if (selectedPanelIdx !== 1) return;
-  document.getElementById('sigRow').innerHTML=renderCompositeSignal(attachTradePlan(CoinAnalysis.compositeSignal(rows),rows),frVal);
+  const sg=attachTradePlan(CoinAnalysis.compositeSignal(rows),rows);
+  document.getElementById('sigRow').innerHTML=renderCompositeSignal(sg,frVal);
+  sendJudge(sg,sym,tf,dp());
+}
+// 차트 위 판단 카드(방향 점수·실행 규칙)에 같은 계산 결과를 넘긴다
+function sendJudge(sg,symbol,tfArg,digits){
+  lastSignal={symbol,tf:tfArg,ready:!!sg?.ready,score:sg?.score,label:sg?.label,direction:sg?.direction,strength:sg?.strength,plan:sg?.plan||null,digits};
+  drawJudge();
+}
+/* ---------- 판단 카드 3장(템플릿 C) ----------
+   방향 점수·실행 규칙은 doSignal이 계산한 값(sendJudge)만 그린다. 모의 거래소(mexc-menu-ko/app.js)와 같은 코드.
+   검증 수치 출처: 사이트-백테스트-비교/results/upgrade-final.txt (2026-11-10) */
+let lastSignal = null, judgeKey = '';
+const TF_KO = { '1m': '1분', '3m': '3분', '5m': '5분', '15m': '15분', '30m': '30분', '1h': '1시간', '2h': '2시간', '4h': '4시간', '6h': '6시간', '12h': '12시간', '1d': '일', '1w': '주', '1M': '월' };
+const TRUST_CARD = `<div class="jcard"><div class="jt">지표 신뢰도 · 백테스트</div>
+<div class="jtr"><span>종합 시그널</span><span class="chip up">기준보다 높음</span></div>
+<div class="jtr"><span>실행 규칙 · 차트 타점</span><span class="chip up">기준보다 높음</span></div>
+<div class="jtr"><span>과매수·과매도</span><span class="chip">방향만 참고</span></div>
+<div class="jtr"><span>파동·지지저항 등 6종</span><span class="chip">참고용</span></div>
+<p class="jfoot">과거 결과이며 미래를 보장하지 않습니다. 자세한 표는 옆 ‘지표 신뢰도’.</p></div>`;
+function judgeHtml(p) {
+  const wait = msg => `<div class="jcard"><div class="jt">방향 점수 · 24봉 뒤</div><p class="muted">${msg}</p></div><div class="jcard"><div class="jt">실행 규칙</div><p class="muted">${msg}</p></div>` + TRUST_CARD;
+  if (!p) return wait('차트에서 계산하는 중입니다.');
+  if (!p.ready || !Number.isFinite(p.score)) return wait('확정봉이 모자라 계산할 수 없습니다.');
+  const s = p.score, sg = (v, d = 2) => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(d);
+  const cls = p.direction === 'LONG_BIAS' ? 'up' : p.direction === 'SHORT_BIAS' ? 'down' : '';
+  const hit = p.strength === 'strong' ? '53.5% · 평소 49.5%' : p.strength === 'weak' ? '52.3% · 평소 49.5%' : '관망 구간 · 평소와 같음';
+  const where = `${esc(String(p.symbol || '').replace(/USDT$/, ''))} ${TF_KO[p.tf] || esc(p.tf || '')}봉`;
+  const k1 = `<div class="jcard"><div class="jt">방향 점수 · ${where} · 24봉 뒤</div>
+<div class="jrow"><span class="jbig ${cls}">${sg(s)}</span><span class="chip ${cls}">${esc(p.label || '')}</span></div>
+<div class="gauge" role="img" aria-label="방향 점수 ${sg(s)}, 범위 −0.58에서 +0.58"><i style="left:${Math.max(2, Math.min(98, 50 + s / 0.58 * 50)).toFixed(1)}%"></i></div>
+<div class="gscale"><span>하락 −0.20</span><span>관망</span><span>상승 +0.20</span></div>
+<div class="jkv"><span>검증 적중</span><b>${hit}</b></div></div>`;
+  const pl = p.plan;
+  let k2;
+  if (!pl || pl.agree == null) k2 = `<div class="jcard"><div class="jt">실행 규칙</div><p class="muted">확정봉 210개가 필요합니다.</p></div>`;
+  else {
+    const dir = pl.agree === 5 ? 1 : pl.agree === -5 ? -1 : 0, side = dir === 1 ? '롱' : '숏';
+    const c = [dir !== 0, pl.adx >= 20, dir !== 0 && dir * s >= 0], n = c.filter(Boolean).length, ok = n === 3;
+    const ck = (y, t) => `<div class="jck"><i class="${y ? 'y' : ''}">${y ? '✓' : '–'}</i>${t}</div>`;
+    const exit = pl.agree <= -3 ? '롱 청산' : pl.agree >= 3 ? '숏 청산' : '';
+    const stop = ok && Number.isFinite(pl.atr) ? (pl.close - dir * 2.5 * pl.atr).toFixed(Number.isInteger(p.digits) ? Math.max(0, Math.min(8, p.digits)) : 2) : '';
+    k2 = `<div class="jcard"><div class="jt">실행 규칙</div>
+<div class="jrow"><span class="jstate ${ok ? (dir === 1 ? 'up' : 'down') : ''}">${ok ? side + ' 조건 충족' : dir ? side + ' 보류' : '대기'}</span><span class="chip">조건 ${n} / 3</span></div>
+<div style="margin-top:6px">${ck(c[0], `추세 합의 ${sg(pl.agree, 0)} / 5`)}${ck(c[1], `ADX ${Number.isFinite(pl.adx) ? pl.adx.toFixed(0) : '—'} (20 이상 필요)`)}${ck(c[2], '방향 점수 같은 쪽')}</div>
+${stop ? `<div class="jkv"><span>손절 (2.5×ATR)</span><b>${stop}</b></div>` : exit ? `<div class="jkv"><span>보유 중이라면</span><b>${exit}</b></div>` : ''}
+<div class="jkv"><span>검증 기대값 · 승률 29%</span><b>+0.27R · 무작위 +0.05R</b></div></div>`;
+  }
+  return k1 + k2 + TRUST_CARD;
+}
+function drawJudge() {
+  const el = document.getElementById('judge');
+  if (!el) return;
+  const html = judgeHtml(lastSignal);
+  if (html !== judgeKey || !el.firstChild) el.innerHTML = judgeKey = html;
 }
 
 function updOHLC(c){
@@ -3372,6 +3451,7 @@ function applySnapshotToSidebar(item) {
   if (!snap) return;
   updateDataContext(item.symbol,item.exchange,item.tf,item.fetchedAt||Date.now());
   renderSidebarSnapshot(snap, rows,item.tf,item.exchange);
+  sendJudge(snap.signal,item.symbol,item.tf,snap.d2);
   safeRun('RSI(분할)', () => doRSI(14, rows));
   safeRun('MACD(분할)', () => doMACD(12, 26, 9, rows));
   safeRun('CCI(분할)', () => doCCI(20, rows));

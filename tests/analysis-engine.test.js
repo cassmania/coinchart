@@ -126,8 +126,13 @@ const risingSignal = A.compositeSignal(directionalRows(1));
 const fallingSignal = A.compositeSignal(directionalRows(-1));
 assert.equal(risingSignal.ready, true);
 assert.equal(fallingSignal.ready, true);
-assert.ok(risingSignal.score > 0.15, `상승 점수가 너무 낮습니다: ${risingSignal.score}`);
-assert.ok(fallingSignal.score < -0.15, `하락 점수가 너무 높습니다: ${fallingSignal.score}`);
+// 방향 점수 v2(2026-11-10 재가중): 버티는 힘(follow)은 추세 쪽, 과열 조정(stretch)은 그 반대쪽으로 작용한다.
+// 일직선 추세는 과열로 보므로 예전처럼 "상승 추세면 점수 > 0.15"를 기대하지 않는다(백테스트에서 그 가정이 기준보다 나빴다).
+assert.ok(risingSignal.contrib.follow > 0 && fallingSignal.contrib.follow < 0, '버티는 힘이 추세 방향이 아닙니다');
+assert.ok(risingSignal.contrib.stretch < 0 && fallingSignal.contrib.stretch > 0, '과열 조정이 추세 반대 방향이 아닙니다');
+almostEqual(risingSignal.score, risingSignal.contrib.follow + risingSignal.contrib.stretch);
+assert.ok(Math.abs(risingSignal.score + fallingSignal.score) < 0.05, `상승·하락 샘플 점수가 대칭이 아닙니다: ${risingSignal.score} / ${fallingSignal.score}`);
+assert.ok(Math.abs(risingSignal.score) <= 1 && ['strong', 'weak', 'none'].includes(risingSignal.strength));
 assert.deepEqual(Object.keys(risingSignal.axes), ['trend', 'momentum', 'volatility', 'volume']);
 assert.equal(A.compositeSignal(directionalRows(1).slice(0, 59)).ready, false);
 assert.equal(A.compositeSignal(directionalRows(1).slice(0, 60)).ready, true);
@@ -138,19 +143,23 @@ const historicalSignal = A.compositeSignal(historicalRows.slice(0, 240));
 const sameHistoricalSignal = A.compositeSignal([...historicalRows.slice(0, 240), ...directionalRows(-1).slice(0, 20)].slice(0, 240));
 almostEqual(historicalSignal.score, sameHistoricalSignal.score);
 
+// 시간봉 요약 검사에는 '상승 우위/하락 우위로 판정된 신호'가 필요하다. v2에서는 일직선 상승이 과열(하락 우위)로 나오므로 방향으로 고른다.
+const upSample = [risingSignal, fallingSignal].find(x => x.direction === 'LONG_BIAS');
+const downSample = [risingSignal, fallingSignal].find(x => x.direction === 'SHORT_BIAS');
+assert.ok(upSample && downSample, '방향이 갈린 샘플이 필요합니다');
 // 반대 방향 시간봉이 공존하면 평균으로 숨기지 않고 충돌로 표시해야 합니다.
 const mtfConflict = A.summarizeTimeframes([
-  { timeframe:'1h', signal:risingSignal },
-  { timeframe:'4h', signal:risingSignal },
-  { timeframe:'1w', signal:fallingSignal }
+  { timeframe:'1h', signal:upSample },
+  { timeframe:'4h', signal:upSample },
+  { timeframe:'1w', signal:downSample }
 ]);
 assert.equal(mtfConflict.state, 'CONFLICT');
 assert.equal(mtfConflict.up, 2);
 assert.equal(mtfConflict.down, 1);
 const mtfAligned = A.summarizeTimeframes([
-  { timeframe:'1h', signal:risingSignal },
-  { timeframe:'4h', signal:risingSignal },
-  { timeframe:'12h', signal:risingSignal }
+  { timeframe:'1h', signal:upSample },
+  { timeframe:'4h', signal:upSample },
+  { timeframe:'12h', signal:upSample }
 ]);
 assert.equal(mtfAligned.state, 'LONG_BIAS');
 
